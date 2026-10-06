@@ -4,7 +4,9 @@
   "outputDirectory": "public",
   "buildCommand": "python3 scripts/check_deploy.py",
   "public": false,
-  "git": {"deploymentEnabled": false},
+  "git": {
+    "deploymentEnabled": false
+  },
   "functions": {
     "api/*.py": {
       "maxDuration": 10,
@@ -15,13 +17,36 @@
     {
       "source": "/(.*)",
       "headers": [
-        {"key": "Content-Security-Policy", "value": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"},
-        {"key": "X-Content-Type-Options", "value": "nosniff"},
-        {"key": "X-Frame-Options", "value": "DENY"},
-        {"key": "Referrer-Policy", "value": "no-referrer"},
-        {"key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()"}
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; font-src 'self'"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
       ]
     },
-    {"source": "/api/(.*)", "headers": [{"key": "Cache-Control", "value": "no-store"}]}
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
   ]
 }

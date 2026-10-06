@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 from pathlib import Path
 import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_FILES = {"index.html", "styles.css", "app.js", "model.js", "favicon.svg", "robots.txt"}
+PUBLIC_FILES = {'walkthrough.html', 'index.html', 'styles.css', 'llms.txt', 'robots.txt', '404.html', 'discovery.json', 'walkthrough.css', 'sitemap.xml', 'fonts/OFL.txt', 'app.js', 'favicon.svg', 'fonts/fira-code-latin.woff', 'agents.html'}
 API_FILES = {"status.py", "messages.py", "connections.py"}
 ALLOWED_IMPORT_ROOTS = {"production", "http", "json", "dataclasses", "typing", "__future__"}
 FORBIDDEN_ROUTES = ("/api/session", "/api/invitations", "/api/grants", "/api/envelopes")
@@ -20,6 +21,8 @@ def check(root=ROOT):
     config = json.loads((root / "vercel.json").read_text())
     if config.get("outputDirectory") != "public" or config.get("framework") is not None:
         errors.append("Public output must be the isolated public/ folder with no framework preset.")
+    if config.get("git", {}).get("deploymentEnabled") is not False:
+        errors.append("Automatic Git deployment must remain disabled.")
     if config.get("public") is True:
         errors.append("Public source/log exposure must not be enabled.")
     for path in (root / "public").rglob("*"):
@@ -34,6 +37,11 @@ def check(root=ROOT):
         path = root / "public" / relative
         if path.is_symlink():
             errors.append(f"Public symlink is not allowed: {relative}")
+        if relative == "fonts/fira-code-latin.woff":
+            # Explicitly reviewed, static Latin font. No arbitrary binaries.
+            if hashlib.sha256(path.read_bytes()).hexdigest() != "0d6cd41d86ddcb021c765e2286f150dddbea5f13db0a24fcc5abc94767760d87":
+                errors.append("Public font differs from the reviewed subset.")
+            continue
         source = path.read_text()
         if any(route in source for route in FORBIDDEN_ROUTES):
             errors.append(f"Public asset refers to a local fixture route: {relative}")
@@ -67,7 +75,7 @@ def check(root=ROOT):
             if "sqlite3" in source or "fixture_keys" in source or "silk.service" in source:
                 errors.append(f"Local broker material in public API: {path.relative_to(root)}")
     exclusions = " ".join(str(value.get("excludeFiles", "")) for value in config.get("functions", {}).values())
-    for required in ("silk/**", "web/**", "tests/**", "var/**", "artifacts/**", "*.sqlite3"):
+    for required in ("services/**", "silk/**", "web/**", "tests/**", "var/**", "artifacts/**", "*.sqlite3"):
         if required not in exclusions:
             errors.append("Missing function bundle exclusion: " + required)
     if errors:

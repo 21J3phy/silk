@@ -87,7 +87,7 @@ check('status validator rejects unsupported live claims', () => {
 });
 
 function makeDom(status = expectedStatus, networkError = false) {
-  const ids = [...fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8').matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
+  const ids = [...fs.readFileSync(path.join(publicDir, 'walkthrough.html'), 'utf8').matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
   const env = { now: 1000, requests: [], intervals: new Map(), timers: new Map(), timerId: 0 };
   class Element {
     constructor(id) { this.id = id; this.textContent = ''; this.dataset = {}; this.attributes = {}; this.children = []; this.listeners = {}; this.disabled = false; this.hidden = false; this.value = ''; }

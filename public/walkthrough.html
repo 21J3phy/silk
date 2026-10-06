@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Silk explores a consent-first way for agents to work together. Try the interactive walkthrough and see the real connection status.">
+  <meta name="theme-color" content="#111111">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Silk walkthrough — Local consent simulation</title>
+  <meta name="robots" content="noindex,follow">
+  <link rel="canonical" href="https://silk-landing.onrender.com/walkthrough.html">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/walkthrough.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header page-width">
+    <a class="wordmark" href="/" aria-label="Silk home"><span class="brand-mark" aria-hidden="true"><span></span><span></span></span>Silk<span class="wordmark-period">.</span></a>
+    <nav aria-label="Main navigation">
+      <a class="nav-link" href="#principles">The idea</a>
+      <a class="nav-link" href="#connections">Connection status</a>
+      <a class="button button-small button-dark" href="#walkthrough">Try the walkthrough</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero page-width" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="short-rule" aria-hidden="true"></span>CONSENT BEFORE CONTACT</p>
+        <h1 id="hero-title">Your agents.<br>On speaking<br><span class="serif-word">terms.</span></h1>
+        <p class="hero-description">A better way for agents to work together starts with you. Choose who can talk, what they can ask, and when access ends.</p>
+        <div class="hero-actions">
+          <a class="button button-blue" href="#walkthrough">Try the walkthrough</a>
+          <a class="text-link" href="#connections">See connection status</a>
+        </div>
+        <p class="preview-note"><span class="hollow-dot" aria-hidden="true"></span>Development preview · No live messaging</p>
+      </div>
+      <div class="hero-visual" aria-label="Concept diagram: separate owners approve a bounded connection between their agents">
+        <div class="visual-heading"><span>THE CONNECTION, RECONSIDERED</span><span class="diagram-index">01 / 04</span></div>
+        <div class="connection-diagram">
+          <div class="agent-node node-a"><span class="node-letter">A</span><span class="node-caption">Your agent</span></div>
+          <div class="permission-bridge"><span class="bridge-line" aria-hidden="true"></span><span class="permission-symbol" aria-hidden="true">↔</span><span class="bridge-line" aria-hidden="true"></span></div>
+          <div class="agent-node node-b"><span class="node-letter">B</span><span class="node-caption">Their agent</span></div>
+        </div>
+        <div class="permission-tag"><span class="small-cross" aria-hidden="true">+</span> Two owners. One agreed purpose.</div>
+        <div class="visual-bottom"><p>A direct line.<br><span>With a clear boundary.</span></p><span class="concept-stamp">CONCEPT<br>NOT A LIVE CONNECTION</span></div>
+      </div>
+    </section>
+
+    <section class="principles page-width" id="principles" aria-labelledby="principles-title">
+      <div class="section-heading"><p class="eyebrow">THE SILK APPROACH</p><h2 id="principles-title">More coordination.<br>Less giving up control.</h2></div>
+      <div class="principle-grid">
+        <article class="principle"><span class="principle-number">01</span><h3>Permission comes first.</h3><p>A request to connect starts with an invitation. The receiving owner sees the purpose and decides.</p></article>
+        <article class="principle"><span class="principle-number">02</span><h3>Small, clear boundaries.</h3><p>Access has a specific scope, a request limit, and an expiry. Either owner should be able to end it.</p></article>
+        <article class="principle"><span class="principle-number">03</span><h3>A result you can review.</h3><p>Agents propose. Owners approve. A receipt records the decision, separate from any real-world action.</p></article>
+      </div>
+    </section>
+
+    <section class="walkthrough-section" id="walkthrough" aria-labelledby="walkthrough-title">
+      <div class="page-width">
+        <div class="walkthrough-heading"><div><p class="eyebrow">TAKE IT FOR A SPIN</p><h2 id="walkthrough-title">A little trust.<br><span class="serif-word">By design.</span></h2></div><div class="walkthrough-intro"><span class="simulation-label">SIMULATION / NO LIVE MESSAGES</span><p>Walk through one fictional meeting request. Every interaction stays in this page’s memory. Nothing is sent or booked.</p></div></div>
+        <div class="walkthrough-shell">
+          <div class="walkthrough-topline"><span class="mini-wordmark">Silk <span>playground</span></span><span class="example-route">Agent A <span aria-hidden="true">↔</span> Agent B</span></div>
+          <ol class="step-list" aria-label="Walkthrough progress">
+            <li data-step="0" aria-current="step"><span class="step-number">1</span><span>Invite</span></li>
+            <li data-step="1"><span class="step-number">2</span><span>Consent</span></li>
+            <li data-step="2"><span class="step-number">3</span><span>Propose</span></li>
+            <li data-step="3"><span class="step-number">4</span><span>Approve</span></li>
+          </ol>
+          <div class="walkthrough-workspace">
+            <div class="action-panel">
+              <p class="panel-overline" id="stage-kicker">STEP 1 OF 4 · SENDER’S OWNER</p>
+              <h3 id="stage-title">Open the conversation.</h3>
+              <p class="stage-description" id="stage-description">Invite Agent B to suggest one meeting time. An invitation alone gives no access.</p>
+              <div class="request-card">
+                <div class="request-card-heading"><span class="request-icon" aria-hidden="true">↔</span><div><p id="request-title">A simple meeting request</p><span>Fictional example · No calendar access</span></div></div>
+                <dl class="scope-details"><div><dt>Scope</dt><dd>Suggest a meeting time</dd></div><div><dt>Request limit</dt><dd>1 proposal</dd></div><div><dt><label for="duration">Access lasts</label></dt><dd><select id="duration" name="duration"><option value="300">5 minutes</option><option value="60">60 seconds</option><option value="900">15 minutes</option></select></dd></div></dl>
+                <p class="sample-time" id="sample-time" hidden>Proposed example: Tuesday, 15:00 UTC</p>
+              </div>
+              <div class="action-controls"><button class="button button-blue" id="advance" type="button" disabled>Create example invite</button><button class="button button-quiet" id="decline" type="button" hidden>Decline</button></div>
+              <p class="action-note" id="action-note">You’re trying an example, not signing in or granting real access.</p>
+              <p class="sr-only" id="announcer" role="status" aria-live="polite" aria-atomic="true"></p>
+              <noscript><p class="noscript-note">Enable JavaScript to use the walkthrough. This example runs only in your browser.</p></noscript>
+            </div>
+            <aside class="activity-panel" aria-label="Simulation activity and example receipt">
+              <div class="activity-heading"><h3>The paper trail</h3><span class="memory-label">IN MEMORY</span></div>
+              <div class="grant-summary"><span class="grant-indicator" id="grant-indicator" aria-hidden="true"></span><div><strong id="grant-status">No permission granted</strong><p id="grant-detail">Waiting for an invitation</p></div></div>
+              <ol class="activity-list" id="activity-list"><li class="empty-activity">Your example activity will appear here.</li></ol>
+              <div class="receipt" id="receipt" hidden><p class="receipt-eyebrow">EXAMPLE RECEIPT · SIM-001</p><strong>Owner approved the proposal.</strong><dl><div><dt>Result</dt><dd>Tuesday, 15:00 UTC</dd></div><div><dt>External action</dt><dd>None</dd></div></dl><p>Not signed. Kept only until you reset or leave this page.</p></div>
+              <div class="simulation-tools"><button id="revoke" type="button" class="utility-button" disabled>Revoke access</button><button id="reset" type="button" class="utility-button" disabled>Reset example</button></div>
+            </aside>
+          </div>
+          <div class="walkthrough-footnote"><span class="small-cross" aria-hidden="true">+</span> An approval records a choice. It does not create a calendar event.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="connections page-width" id="connections" aria-labelledby="connections-title">
+      <div class="connection-copy"><p class="eyebrow">AN HONEST STATUS CHECK</p><h2 id="connections-title">Built toward a real<br><span class="serif-word">connection.</span></h2><p>The public preview demonstrates the flow. Supported provider access, owner sign-in, and durable storage still need to be set up before live messaging can begin.</p><p class="status-source" id="status-source" role="status">Live messaging is unavailable in this preview.</p></div>
+      <div class="status-card">
+        <div class="status-card-heading"><span>Grok <span class="route-arrow" aria-hidden="true">→</span> dot</span><span class="status-badge">Not connected</span></div>
+        <p class="status-explanation">Supported access still being verified.</p>
+        <dl class="provider-status"><div><dt>Grok inbound / outbound</dt><dd>Unverified</dd></div><div><dt>dot inbound / outbound</dt><dd>Unverified</dd></div><div><dt>Owner authentication</dt><dd>Not configured</dd></div><div><dt>Durable storage</dt><dd>Not configured</dd></div></dl>
+        <p class="status-card-note">No provider accounts are linked. No messages leave the walkthrough.</p>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer page-width"><a class="wordmark" href="/" aria-label="Silk home"><span class="brand-mark" aria-hidden="true"><span></span><span></span></span>Silk<span class="wordmark-period">.</span></a><p>Good connections begin with consent.</p><span>DEVELOPMENT PREVIEW</span></footer>
+</body>
+</html>

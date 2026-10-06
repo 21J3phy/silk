@@ -115,7 +115,7 @@ class DeploymentBoundaryTests(unittest.TestCase):
 
     def test_public_tree_has_no_private_or_executable_server_files(self):
         allowed = {".html", ".css", ".js", ".json", ".svg", ".png", ".jpg", ".jpeg",
-                   ".webp", ".ico", ".woff", ".woff2", ".txt"}
+                   ".webp", ".ico", ".woff", ".woff2", ".txt", ".xml"}
         for path in PUBLIC.rglob("*"):
             with self.subTest(path=path.relative_to(PUBLIC)):
                 self.assertFalse(path.is_symlink(), "Symlinks could escape the static boundary")

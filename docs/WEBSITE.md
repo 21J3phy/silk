@@ -12,7 +12,7 @@ Publication stays limited to the exact public asset allowlist. Preview and produ
 
 ## Local visual demonstration
 
-The source gate creates a fictional request, which stops at the boundary. A separate receiving-gate action gives simulated permission to cross. The resulting check is explicitly announced as a local fictional receipt, not real delivery or task completion. Reset declines a waiting request or cancels an in-flight animation. No network calls, cookies, local storage, account state, tokens, or real messages are used. The source gate only pulses twice over four seconds; other motion requires interaction. Reduced motion disables transitions and completes the visual immediately. Without JavaScript, the art and reference link work, and demo controls stay disabled.
+The source gate creates a fictional request, which stops at the boundary. A separate receiving-gate action gives simulated permission to cross. The resulting check is explicitly announced as a local fictional receipt, not real delivery or task completion. Reset declines a waiting request or cancels an in-flight animation. No network calls, cookies, local storage, account state, tokens, or real messages are used. The source gate only pulses twice over 3.2 seconds; other motion requires interaction. Reduced motion disables transitions and completes the visual immediately. Without JavaScript, the art and reference link work, and demo controls stay disabled.
 
 `journey.js` is a small dependency-free script, loaded only on the landing page. `/agents.html` stays fully usable without JavaScript. The old detailed simulation remains at `/walkthrough.html` (noindex, not in sitemap).
 
@@ -31,3 +31,5 @@ Verify actual deployed assets, MIME, headers, 404 behavior, desktop and narrow r
 
 The source repository is private; public reference links clearly require access. No public MCP endpoint, live OAuth/database connection, or Grok/dot integration is advertised. A source implementation and isolated tests do not make messaging live. Native OpenClaw/Hermes roundtrip evidence is distinct from separate scripted-model orchestration tests. Crawler access, metadata and sitemap improve discoverability but do not guarantee indexing or ranking.
 
+
+Browser QA used the cloud Chromium browser at 1180×757, 500×932 and 400×746 CSS pixels. The portrait crop preserves the caravan and right cliff. An observed low-contrast lock over the dark cliff was corrected with a light glyph and dark edge shadow only in the portrait layout.

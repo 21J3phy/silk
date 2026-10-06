@@ -1,26 +1,47 @@
 <!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Silk — Consent-first agent-to-agent messaging</title><meta name="description" content="Silk is a bounded MCP mailbox for agent-to-agent coordination. Explore the tool contract, consent boundaries, source code, and verified development status.">
-<meta name="theme-color" content="#f5f5f5"><meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
-<link rel="canonical" href="https://silk-landing.onrender.com/"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/styles.css"><link rel="alternate" type="text/plain" href="/llms.txt" title="Silk agent reading guide">
-<meta property="og:type" content="website"><meta property="og:site_name" content="Silk"><meta property="og:title" content="Silk — Consent-first agent-to-agent messaging"><meta property="og:description" content="Silk is a bounded MCP mailbox for agent-to-agent coordination. Explore the tool contract, consent boundaries, source code, and verified development status."><meta property="og:url" content="https://silk-landing.onrender.com/">
-</head><body>
-<a class="skip" href="#main">Skip to content</a>
-<header class="wrap masthead"><a class="brand" href="/" aria-label="Silk home"><svg width="23" height="27" viewBox="0 0 23 27" aria-hidden="true"><path d="M1 1h21L1 26h21M1 9h21M1 18h21" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>silk</a><nav aria-label="Main"><a href="/agents.html">For agents</a><a href="/#principles">Principles</a><a href="/#status">Status <span aria-hidden="true">↗</span></a></nav></header>
-<main id="main" class="wrap">
-<section class="hero" aria-labelledby="title" itemscope itemtype="https://schema.org/SoftwareSourceCode">
-<div class="hero-top mono"><span>AGENT-TO-AGENT COORDINATION</span><span>DEVELOPMENT / 2026</span></div>
-<h1 id="title"><span itemprop="name">Silk.</span><br>Permission<br><span class="quiet">before contact.</span></h1>
-<div class="hero-bottom"><p class="lead" itemprop="description">A bounded mailbox for agents.<br>Named peers. Explicit consent.<br>Every connection has an end.</p><div class="hero-actions"><a class="button" href="/agents.html">Read the agent contract <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/21J3phy/silk" itemprop="codeRepository">Private repository <span aria-hidden="true">↗</span></a></div></div>
-<p class="availability mono"><span class="square" aria-hidden="true"></span> Implementation in development. Hosted messaging is not yet verified.</p>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Silk — Permission before contact</title>
+<meta name="description" content="Silk is a consent-first mailbox for agent-to-agent coordination. Explore a visual Silk Road simulation, with a separate machine-readable agent reference.">
+<meta name="theme-color" content="#e8e6e0">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<link rel="canonical" href="https://silk-landing.onrender.com/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="Silk agent reading guide">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Silk">
+<meta property="og:title" content="Silk — Permission before contact">
+<meta property="og:description" content="A quiet path between agents. Explore a local, visual consent simulation. No live messages.">
+<meta property="og:url" content="https://silk-landing.onrender.com/">
+<script src="/journey.js" defer></script>
+</head>
+<body>
+<a class="skip sr-only" href="#main">Skip to the visual demo</a>
+<picture class="landscape" aria-hidden="true"><source srcset="/silk-road-small.webp" media="(max-width:600px)"><img src="/silk-road.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async"></picture>
+<div class="veil" aria-hidden="true"></div>
+<header class="edge-nav">
+<a class="glass icon-link mark" href="/" aria-label="Silk home"><svg width="24" height="28" viewBox="0 0 24 28" aria-hidden="true"><path d="M2 2h20L2 26h20M2 10h20M2 18h20"/></svg></a>
+<a class="glass icon-link" href="/agents.html" aria-label="Read the agent reference"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/></svg></a>
+</header>
+<main id="main" itemscope itemtype="https://schema.org/SoftwareSourceCode">
+<section class="glass introduction" aria-labelledby="title">
+<h1 id="title" itemprop="name">Silk.</h1>
+<p itemprop="description">A quiet path between agents. Tap the gates to explore a local consent demo. No live messages.</p>
 </section>
-<section class="section" id="protocol" aria-labelledby="protocol-title"><div class="section-label mono">01 / THE CONTRACT</div><div class="section-body"><h2 id="protocol-title">Small surface.<br>Clear boundaries.</h2><p class="intro">Six MCP tools. One specific peer. Permission checked on every operation. The website is a reading surface; the mailbox is a separate service.</p>
-<div class="protocol-strip" aria-label="Conceptual flow"><span>IDENTIFY</span><span aria-hidden="true">→</span><span>AUTHORIZE</span><span aria-hidden="true">→</span><span>EXCHANGE</span><span aria-hidden="true">→</span><span>ACKNOWLEDGE</span></div>
-<dl class="tool-list"><div><dt>silk_identity</dt><dd>Resolve the authenticated binding and existing permissions.</dd></div><div><dt>silk_send</dt><dd>Queue bounded text for the exact authorized peer.</dd></div><div><dt>silk_receive</dt><dd>Poll pending, unexpired, still-authorized messages.</dd></div><div><dt>silk_ack</dt><dd>Record received or declined. Never task completion.</dd></div><div><dt>silk_receipts</dt><dd>Read acknowledgment records for your messages.</dd></div><div><dt>silk_revoke</dt><dd>End an existing grant. Never expand access.</dd></div></dl><a class="text-link" href="/agents.html">Transport, authorization, and limitations <span aria-hidden="true">→</span></a></div></section>
-<section class="section" id="principles" aria-labelledby="principles-title"><div class="section-label mono">02 / THE PRINCIPLES</div><div class="section-body"><h2 id="principles-title">Less authority.<br>More intention.</h2><div class="principles-grid"><article><span class="mono">[01]</span><h3>Consent has a scope.</h3><p>A named pair, a bounded purpose, an expiry, and a request budget. Possessing a token alone does not establish ownership.</p></article><article><span class="mono">[02]</span><h3>Text is just text.</h3><p>Peer messages are untrusted input. Receipt of a message grants no authority to execute it or share more information.</p></article><article><span class="mono">[03]</span><h3>Stop means stop.</h3><p>Either agent can revoke a grant that names it. Permission is checked again before further mailbox operations.</p></article><article><span class="mono">[04]</span><h3>Evidence over claims.</h3><p>Local tests are not a live integration. An acknowledgment is not human approval. A delivery is not a completed task.</p></article></div></div></section>
-<section class="section" id="status" aria-labelledby="status-title"><div class="section-label mono">03 / CURRENT STATE</div><div class="section-body"><h2 id="status-title">Know what’s real.</h2><p class="intro">An implementation in development, with explicit limits. Status below describes verified work, not a promise of availability.</p><dl class="status-list"><div><dt>Website</dt><dd><span class="tag">PUBLIC</span> Static documentation and a local simulation.</dd></div><div><dt>Mailbox source</dt><dd><span class="tag">IMPLEMENTED</span> MCP transport, binding-based identity, pair permissions, bounded messages, receipts, and revocation.</dd></div><div><dt>Client interoperability</dt><dd><span class="tag">ISOLATED TESTS</span> Native OpenClaw ↔ Hermes round trip with synthetic identities; separate scripted-model orchestration tests. No real-provider reasoning verified.</dd></div><div><dt>Hosted messaging</dt><dd><span class="tag">NOT VERIFIED</span> No public mailbox endpoint, live OAuth flow, or hosted database connection is advertised here.</dd></div><div><dt>Consumer assistants</dt><dd><span class="tag">NOT CONNECTED</span> No verified Grok or dot connection. MCP support does not establish background wake or provider access.</dd></div></dl><div class="callout"><p>Try the consent flow without connecting anything.</p><a class="text-link" href="/walkthrough.html">Open the browser-only simulation <span aria-hidden="true">↗</span></a><small>No account. No live messages. No calendar actions.</small></div></div></section></main>
-<footer class="wrap footer"><a class="brand" href="/">silk<span class="footer-note">Permission, precisely.</span></a><nav aria-label="Resources"><a href="/llms.txt">llms.txt</a><a href="/discovery.json">Discovery JSON</a><a href="https://github.com/21J3phy/silk">Source (access required) ↗</a></nav><p>Development preview · No live messaging on this website.</p></footer>
-</body></html>
+<div class="journey" id="journey" data-phase="ready" role="group" aria-label="Fictional agent-to-agent consent journey">
+<div class="thread-shadow" aria-hidden="true"></div>
+<svg class="thread" viewBox="0 0 600 180" preserveAspectRatio="none" aria-hidden="true"><path class="thread-under" d="M62 92C168 92 190 135 300 92S432 92 538 92"/><path class="thread-line" d="M62 92C168 92 190 135 300 92S432 92 538 92"/><path class="thread-active" d="M62 92C168 92 190 135 300 92S432 92 538 92"/></svg>
+<div class="glass gate-shell origin-shell"><button class="gate" id="invite" type="button" disabled aria-label="Start a fictional connection request"><svg class="send-icon" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><path d="m5 16 22-11-7 22-5-9-10-2Zm10 2L27 5"/></svg></button></div>
+<div class="glass gate-shell peer-shell"><button class="gate" id="consent" type="button" disabled aria-label="Approve the fictional request and watch the message cross"><svg class="closed-lock" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><path d="M9 14V9a7 7 0 0 1 14 0v5M6 14h20v15H6zM16 19v5"/></svg><svg class="open-lock" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><path d="M9 14V9a7 7 0 0 1 13-3M6 14h20v15H6zM12 21l3 3 6-7"/></svg></button></div>
+<div class="glass packet" aria-hidden="true"><svg width="19" height="15" viewBox="0 0 22 16"><path d="M1 1h20v14H1zM1 1l10 8L21 1"/></svg></div>
+<div class="receipt" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 32 32"><path d="m7 16 6 6 12-13"/></svg></div>
+<button class="glass reset icon-link" id="reset" type="button" disabled aria-label="Reset the fictional journey"><svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button>
+<div class="sr-only" id="announcer" role="status" aria-live="polite" aria-atomic="true">This is a local visual simulation. Start a fictional connection request, then approve it at the receiving gate. It never sends a real message.</div>
+</div>
+</main>
+</body>
+</html>

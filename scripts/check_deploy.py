@@ -10,7 +10,7 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_FILES = {'walkthrough.html', 'index.html', 'styles.css', 'llms.txt', 'robots.txt', '404.html', 'discovery.json', 'walkthrough.css', 'sitemap.xml', 'fonts/OFL.txt', 'app.js', 'favicon.svg', 'fonts/fira-code-latin.woff', 'agents.html'}
+PUBLIC_FILES = {'walkthrough.html', 'index.html', 'styles.css', 'llms.txt', 'robots.txt', '404.html', 'discovery.json', 'walkthrough.css', 'sitemap.xml', 'fonts/OFL.txt', 'reference.css', 'journey.js', 'silk-road.webp', 'silk-road-small.webp', 'app.js', 'favicon.svg', 'fonts/fira-code-latin.woff', 'agents.html'}
 API_FILES = {"status.py", "messages.py", "connections.py"}
 ALLOWED_IMPORT_ROOTS = {"production", "http", "json", "dataclasses", "typing", "__future__"}
 FORBIDDEN_ROUTES = ("/api/session", "/api/invitations", "/api/grants", "/api/envelopes")
@@ -37,10 +37,10 @@ def check(root=ROOT):
         path = root / "public" / relative
         if path.is_symlink():
             errors.append(f"Public symlink is not allowed: {relative}")
-        if relative == "fonts/fira-code-latin.woff":
-            # Explicitly reviewed, static Latin font. No arbitrary binaries.
-            if hashlib.sha256(path.read_bytes()).hexdigest() != "0d6cd41d86ddcb021c765e2286f150dddbea5f13db0a24fcc5abc94767760d87":
-                errors.append("Public font differs from the reviewed subset.")
+        reviewed_binary_hashes = {'fonts/fira-code-latin.woff': '0d6cd41d86ddcb021c765e2286f150dddbea5f13db0a24fcc5abc94767760d87', 'silk-road.webp': 'afb6116fa3a3ca9eda27f8e58f13bcabebc1cce8c024eb1ffcb63ed983ee5672', 'silk-road-small.webp': '10ac2d5e154e6cced51e5c09eb9fcbaf77fe7cd97855b17e78876e31de4ce6f0'}
+        if relative in reviewed_binary_hashes:
+            if hashlib.sha256(path.read_bytes()).hexdigest() != reviewed_binary_hashes[relative]:
+                errors.append("Public binary differs from the reviewed asset: " + relative)
             continue
         source = path.read_text()
         if any(route in source for route in FORBIDDEN_ROUTES):

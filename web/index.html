@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f6f2">
+  <meta name="description" content="A local, consent-first agent coordination demo. Two fixture owners, explicit permissions, and a shared receipt.">
+  <title>Silk · Consent-first agent DMs</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Skip to workspace</a>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Silk home"><span class="brand-mark" aria-hidden="true">b²</span><span>Silk<span class="brand-caption">THE CONSENT LAYER</span></span></a>
+      <div class="owner-control">
+        <span class="owner-avatar" id="owner-avatar" aria-hidden="true">A</span>
+        <div><label for="owner-select">You’re viewing as</label><select id="owner-select" disabled><option>Loading owners…</option></select></div>
+        <span class="demo-label">DEMO</span>
+      </div>
+    </header>
+
+    <aside class="demo-banner" aria-label="Demo limitations"><span class="banner-dot" aria-hidden="true"></span><p><strong>A local sandbox, by design.</strong> Alice, Bob, Atlas, and Nova are fixtures. No live agents or accounts. No calendar access or bookings.</p><span class="local-tag">LOCAL ONLY</span></aside>
+
+    <main id="workspace">
+      <section class="intro" aria-labelledby="page-title">
+        <div><p class="eyebrow">AGENT-TO-AGENT, OWNER-TO-OWNER</p><h1 id="page-title">Good connections<br>start with <span>consent.</span></h1><p class="intro-copy">Let agents coordinate the small stuff.<br>You decide who gets through, what they can do, and when they stop.</p></div>
+        <div class="protocol-visual" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="visual-agent visual-atlas">a<span>ATLAS</span></div><div class="visual-agent visual-nova">n<span>NOVA</span></div><div class="consent-seal">✓<span>BY PERMISSION</span></div><span class="visual-caption">A handshake before a conversation.</span></div>
+      </section>
+
+      <section class="flow-panel" aria-labelledby="flow-title">
+        <div class="flow-topline"><h2 id="flow-title">One connection, four deliberate steps</h2><span id="connection-status" class="connection-status" role="status"><span aria-hidden="true"></span>Connecting…</span></div>
+        <ol class="flow-steps" aria-label="Coordination progress">
+          <li id="step-invite"><span class="step-number">1</span><div><strong>Invite</strong><small>Ask to connect</small></div></li>
+          <li id="step-consent"><span class="step-number">2</span><div><strong>Consent</strong><small>A scoped, revocable grant</small></div></li>
+          <li id="step-propose"><span class="step-number">3</span><div><strong>Propose</strong><small>Agents compare options</small></div></li>
+          <li id="step-approve"><span class="step-number">4</span><div><strong>Approve</strong><small>A human makes the call</small></div></li>
+        </ol>
+      </section>
+
+      <div class="notice hidden" id="error-notice" role="alert"><div><strong id="error-title">Something needs attention</strong><p id="error-message"></p></div><button id="retry-connection" class="button button-small button-quiet" type="button">Retry connection</button><button id="dismiss-error" class="icon-button" type="button" aria-label="Dismiss error">×</button></div>
+      <p id="live-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+
+      <section class="next-step" aria-labelledby="next-title"><div><p class="eyebrow" id="next-eyebrow">YOUR NEXT MOVE</p><h2 id="next-title">Getting your workspace ready…</h2><p id="next-description">Loading the two local fixture agents and their consent state.</p></div><button type="button" class="button button-dark hidden" id="next-action"></button></section>
+
+      <div class="workspace-grid">
+        <div class="workspace-column">
+          <section class="panel" id="directory-section" aria-labelledby="directory-title">
+            <div class="section-heading"><div><p class="eyebrow">01 / DISCOVER</p><h2 id="directory-title">A very small directory.</h2></div><span class="count-pill">2 FIXTURES</span></div>
+            <p class="section-copy">Two independent owners. Each agent speaks only with permission.</p>
+            <div id="directory" class="agent-grid"><p class="loading-copy">Loading agents…</p></div>
+            <form id="invitation-form" class="composer invitation-composer hidden">
+              <div class="form-heading"><h3 id="invitation-form-title">Request a connection</h3><button type="button" id="close-invitation" class="icon-button" aria-label="Close invitation form">×</button></div>
+              <label for="invitation-purpose">What should the agents coordinate?</label>
+              <textarea id="invitation-purpose" name="purpose" maxlength="280" rows="2" required>Find a time for a 30-minute project sync.</textarea>
+              <div class="scope-summary"><span class="scope-tag">meeting.coordinate</span><span>4 request turns</span><span>Expires in 1 hour</span></div>
+              <p class="field-help" id="invitation-explainer">The recipient owner must accept before any message can be sent. Either owner can revoke the grant.</p>
+              <button type="submit" id="send-invitation" class="button button-dark" data-mutation>Send invitation <span aria-hidden="true">↗</span></button>
+            </form>
+          </section>
+
+          <section class="panel mailbox-panel" id="mailbox-section" aria-labelledby="mailbox-title">
+            <div class="section-heading"><div><p class="eyebrow">03 / COORDINATE</p><h2 id="mailbox-title">The mailbox.</h2></div><span class="count-pill" id="mailbox-count">0 MESSAGES</span></div>
+            <p class="section-copy">A proposal can move between agents. Approval stays with the recipient owner.</p>
+            <form id="message-form" class="composer hidden">
+              <div class="form-heading"><h3>Send meeting options</h3><button type="button" id="close-composer" class="icon-button" aria-label="Close message composer">×</button></div>
+              <p class="composer-route" id="composer-route"></p>
+              <label for="meeting-title">Meeting title</label><input id="meeting-title" name="title" type="text" maxlength="120" value="Project sync" required>
+              <fieldset><legend>Suggested options <span>(UTC)</span></legend><p class="field-help">Choose up to three public sample times. These aren’t anyone else’s private calendar.</p><div id="meeting-options" class="option-list"></div></fieldset>
+              <p class="field-help" id="composer-scope"></p>
+              <button type="submit" class="button button-dark" id="send-message" data-mutation>Send to agent <span aria-hidden="true">↗</span></button>
+              <p class="retry-hint hidden" id="message-retry-hint">Delivery wasn’t confirmed. Retry safely: the same request key will be reused unless you change the request.</p>
+            </form>
+            <div id="messages"><div class="empty-state"><span class="empty-symbol" aria-hidden="true">↔</span><h3>No conversations yet.</h3><p>Start with an invitation. After the other owner accepts, send a few times to compare.</p></div></div>
+          </section>
+        </div>
+
+        <div class="workspace-column">
+          <section class="panel consent-panel" id="consent-section" aria-labelledby="consent-title">
+            <div class="section-heading"><div><p class="eyebrow">02 / PERMISSION</p><h2 id="consent-title">The consent desk.</h2></div><span class="section-icon" aria-hidden="true">◇</span></div>
+            <p class="section-copy">Narrow scope. Limited time. Always revocable.</p>
+            <div id="permissions"><div class="empty-state compact"><span class="empty-symbol" aria-hidden="true">◇</span><h3>The door is closed.</h3><p>No agent has permission to send a message. That’s the starting point.</p></div></div>
+          </section>
+          <section class="panel activity-panel" aria-labelledby="activity-title"><div class="section-heading"><div><p class="eyebrow">04 / ACCOUNTABILITY</p><h2 id="activity-title">A paper trail.</h2></div><span class="count-pill">AUDIT</span></div><div id="audit"><p class="quiet-copy">Activity appears here as each step happens.</p></div></section>
+          <details class="boundaries panel"><summary>Small scope. Clear boundaries.<span aria-hidden="true">+</span></summary><div class="boundaries-content"><p>This prototype only coordinates meeting proposals. It cannot book or change a calendar.</p><dl><div><dt>Supported scope</dt><dd>meeting.coordinate</dd></div><div><dt>Request lifetime</dt><dd>Up to 5 minutes</dd></div><div><dt>Rate limit</dt><dd>6 requests / minute / pair</dd></div><div><dt>Payload limit</dt><dd>4 KB · 3 time options</dd></div></dl><p class="field-help">Runtime fixture keys identify mock agents. Owner switching is a demo control, not a real sign-in or proof of human consent.</p></div></details>
+        </div>
+      </div>
+      <footer class="footer"><span>Silk <span class="footer-separator">/</span> Small conversations. Explicit permission.</span><span>LOCAL PROTOTYPE · NO LIVE INTEGRATIONS</span></footer>
+    </main>
+  </div>
+  <noscript><p class="noscript">This interactive local demo needs JavaScript. No external scripts are loaded.</p></noscript>
+</body>
+</html>

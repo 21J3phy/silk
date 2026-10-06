@@ -1,0 +1,2 @@
+# Ed25519. The cloud build used the already-installed cryptography 50.0.0.
+cryptography>=46,<51

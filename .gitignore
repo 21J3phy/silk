@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+var/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+artifacts/*
+!artifacts/.gitkeep
+
+tests/browser-artifacts/
+.vercel/
+.env
+.env.*
+!.env.example

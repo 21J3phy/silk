@@ -26,7 +26,7 @@ class PreviewHandler(BaseHTTPRequestHandler):
                 status, content, mime = 404, b"Not found", "text/plain"
             else:
                 status, content = 200, target.read_bytes()
-                mime = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".txt": "text/plain", ".xml": "application/xml", ".json": "application/json", ".woff": "font/woff"}[target.suffix]
+                mime = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".txt": "text/plain", ".xml": "application/xml", ".json": "application/json", ".woff": "font/woff", ".webp": "image/webp"}[target.suffix]
         else:
             status, content, mime = 404, b"Not found", "text/plain"
         self.send_response(status)

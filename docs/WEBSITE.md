@@ -1,60 +1,42 @@
-# Public website
+# Silk visual website
 
-The Render static site publishes only `public/`. The homepage and agent reference need no JavaScript, cookies, third-party font service, analytics, or connection to the mailbox. The existing fictional walkthrough is retained at `/walkthrough.html`, with its script loaded only on that route. It remains a simulation and is excluded from the sitemap and marked `noindex,follow`.
+The landing page is now an original Chinese Silk Road ink-wash landscape with clear, lightly refractive, sharp-edged glass controls. It contains only a visible heading and one description. Links and demo controls use icons with accessible names. The separate `/agents.html` reference retains the technical contract, implementation boundaries, limitations and crawlable links; `/llms.txt`, `/discovery.json`, robots, sitemap and canonical metadata remain available.
 
-## Content and discovery
+The latest user direction permits color in the painting and requests Apple's Liquid Glass rather than frosted panels. The website uses a small CSS approximation inspired by the [Apple materials guidance](https://developer.apple.com/design/human-interface-guidelines/materials), not an Apple-native material/API. Borders, directional highlights and subtle saturation retain the visible scene. Backdrop blur is only 1.5px. Reduced transparency, increased contrast, forced colors and unsupported-browser fallbacks prioritize legibility. UI geometry remains sharp.
 
-- `/`: semantic, source-code microdata, descriptive title and metadata, canonical URL, consent principles and qualified implementation status.
-- `/agents.html`: crawlable transport, authority, tools, evidence limitations, and setup reference.
-- `/discovery.json`: explicitly Silk-specific documentation metadata. `mcp_endpoint` is null and `live_messaging` is false. It is not standard MCP service discovery.
-- `/llms.txt`: optional plaintext reading guide, with no indexing or tool-compatibility guarantee.
-- `/robots.txt` and `/sitemap.xml`: permit crawling and identify the two indexable canonical pages. No deployment-time claim of indexing or ranking.
-- `/404.html`: explicit missing-page content, noindex; no catch-all SPA rewrite.
+## Local visual demonstration
 
-Do not advertise an MCP endpoint until its exact hosted URL, OAuth flow, database, permissions and actual client roundtrip are verified. A native OpenClaw/Hermes round trip used synthetic identities; separate orchestration tests used deterministic local models. No general efficiency, live-provider, Grok or dot integration claim is justified by those tests.
+The source gate creates a fictional request, which stops at the boundary. A separate receiving-gate action gives simulated permission to cross. The resulting check is explicitly announced as a local fictional receipt, not real delivery or task completion. Reset declines a waiting request or cancels an in-flight animation. No network calls, cookies, local storage, account state, tokens, or real messages are used. The source gate only pulses twice over four seconds; other motion requires interaction. Reduced motion disables transitions and completes the visual immediately. Without JavaScript, the art and reference link work, and demo controls stay disabled.
 
-## Design and font provenance
+`journey.js` is a small dependency-free script, loaded only on the landing page. `/agents.html` stays fully usable without JavaScript. The old detailed simulation remains at `/walkthrough.html` (noindex, not in sitemap).
 
-Grayscale only, sharp corners, system SF Pro on Apple systems (`-apple-system` / `BlinkMacSystemFont` / installed SF Pro), with system sans-serif fallback elsewhere. No Apple font is redistributed.
+## Original artwork
 
-Fira Code regular is self-hosted as a 7,636-byte Latin WOFF subset. Source: [Google Fonts Fira Code](https://github.com/google/fonts/tree/main/ofl/firacode), variable `FiraCode[wght].ttf`, pinned to weight 400 during subsetting. The source license is shipped unchanged at `public/fonts/OFL.txt`. The modified subset covers U+0020–U+007E and U+00B7/U+2013/U+2014/U+2192/U+2194, with optional ligature layout removed. FontTools generated the subset; WOFF avoids adding a build dependency. The build guard pins its exact SHA-256. `font-display:swap` preserves immediate text rendering.
+Built-in image generation created an original shan-shui-inspired landscape with misty mountains, a winding caravan path, tiny camels and a distant pavilion. A second image-generation edit preserved the composition while adding traditional jade/blue-green mineral washes, warm ivory paper, muted ochre and sienna. No third-party artwork, signature, lettering, or watermark was supplied. Original raster: 1536×1024. WebP encoding and a 900×600 responsive version reduce transfer without changing the composition. The site publishes only those optimized files; build guards pin their exact hashes.
 
-## Budgets and checks
+Final prompt: “Preserve the beautiful mountain composition, mist, brush texture, caravan trail, tiny camels and pavilion, and large quiet negative space on the left. Add refined traditional Chinese mineral-pigment watercolor color: soft jade and blue-green mountain washes, pale warm ivory mist and rice paper, muted ochre desert trails, restrained rusty sienna rocks and distant sky. Subtle natural color with deep charcoal ink contours, sophisticated and luminous, not oversaturated. No text, signature, seals, watermark, frame, UI or glass elements.”
 
-The homepage critical HTML/CSS/font/favicon total is under 30,000 raw bytes and 16,000 bytes when each is gzipped. This is an asset budget, not a measured network-speed or Core Web Vitals claim. Rendering, protocol, TLS, caching, and server compression depend on actual delivery. The complete public folder also includes optional walkthrough assets and the font license.
+## Typography and budget
 
-Run:
+System SF Pro on Apple systems, system sans-serif fallbacks elsewhere; no Apple font is redistributed. Fira Code regular uses the existing licensed 7,636-byte self-hosted Latin WOFF subset. License is at `public/fonts/OFL.txt`; source is [Google Fonts Fira Code](https://github.com/google/fonts/tree/main/ofl/firacode). No external font requests.
+
+Desktop painting is under 240KB; responsive painting under 110KB. Critical desktop assets stay under 280KB raw / 255KB gzip. This deliberately replaces the earlier 23KB text-only homepage budget with artwork; it remains framework-free with no video, canvas/WebGL loop, or analytics. These are file-size budgets, not Core Web Vitals measurements.
+
+## Validation
 
     python scripts/check_deploy.py
-    python -m unittest discover -s production_tests -v
-    python -m unittest discover -s tests -v
+    python -m unittest discover -v
     node scripts/test_public_ui.cjs
+    node scripts/test_journey.cjs
+    node --check public/journey.js
     python scripts/package_public.py --output /tmp/new-reviewed-silk-package
 
-The website tests check metadata, local links/fragments, sitemap, static/no-script primary routes, grayscale colors, font provenance, disclosure consistency and asset budgets. Existing API, deployment-isolation and fictional-walkthrough checks remain active. `services/**` stays excluded and automatic Git deployment remains disabled.
+Tests cover exact assets, links/fragments, semantic metadata, heading/description-only structure, accessibility hooks, discovery truthfulness, finite motion/fallbacks, local state transitions, duplicate input, reset races, and byte budgets. Existing fixture isolation and backend tests remain unchanged. Automatic Git deployment stays off. `services/**` remains excluded from website bundles.
 
-## Security headers and deployment
+## Security and deployment
 
-`vercel.json` records the header contract for that host; it does not configure Render. The Render static service must separately retain its existing security headers and add `font-src 'self'` to its CSP before using the self-hosted font. Do not widen script/style sources, add `unsafe-inline`, change account permissions, or expose services/fixture paths.
+Render publishes only `public/`. Keep the reviewed site-wide CSP, frame, MIME, referrer and permissions headers. No additional header relaxation is needed for this revision. Main-page CSP permits only same-origin scripts, styles, fonts and images and disallows connections/forms; no inline script, style or event handlers. No repository visibility, credentials, permissions, resources, or paid plan changes.
 
-Recommended site-wide header contract:
+Verify actual deployed assets, MIME, headers, 404 behavior, desktop and narrow rendering, keyboard operation, and full demo sequence. Local preview and browser DevTools are blocked in the assistant cloud browser; do not bypass. Ordinary browser zoom is available for narrow-width/reflow checks; this does not substitute for a physical touch-device test.
 
-    Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
-    X-Content-Type-Options: nosniff
-    X-Frame-Options: DENY
-    Referrer-Policy: no-referrer
-    Permissions-Policy: camera=(), microphone=(), geolocation=()
-
-Primary-page CSP metadata is stricter (no scripts or network connections), but frame protection must be an HTTP header. Validate actual headers, MIME types, non-SPA 404 status, font load, desktop/mobile layout, keyboard focus and simulation behavior on the deployed site. A local browser restriction is not a visual test pass.
-
-## Source guidance
-
-- [Google Search developer guidance](https://developers.google.com/search/docs/fundamentals/get-started-developers): discoverable links and crawlable content.
-- [Google crawlable links](https://developers.google.com/search/docs/crawling-indexing/links-crawlable): normal anchor links with href.
-- [OpenAI crawler documentation](https://developers.openai.com/api/docs/bots): crawler controls and their distinct uses.
-
-Search engines decide crawling, indexing, ranking, and result presentation independently.
-
-## Repository visibility
-
-GitHub metadata verified that the source repository is private. Public source links explicitly require repository access; public agent docs remain self-contained. No repository sharing or permission changes are part of this website release.
+The source repository is private; public reference links clearly require access. No public MCP endpoint, live OAuth/database connection, or Grok/dot integration is advertised. A source implementation and isolated tests do not make messaging live. Native OpenClaw/Hermes roundtrip evidence is distinct from separate scripted-model orchestration tests. Crawler access, metadata and sitemap improve discoverability but do not guarantee indexing or ranking.

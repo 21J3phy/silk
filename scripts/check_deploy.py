@@ -37,7 +37,7 @@ def check(root=ROOT):
         path = root / "public" / relative
         if path.is_symlink():
             errors.append(f"Public symlink is not allowed: {relative}")
-        reviewed_binary_hashes = {'fonts/fira-code-latin.woff': '0d6cd41d86ddcb021c765e2286f150dddbea5f13db0a24fcc5abc94767760d87', 'silk-road.webp': 'afb6116fa3a3ca9eda27f8e58f13bcabebc1cce8c024eb1ffcb63ed983ee5672', 'silk-road-small.webp': '10ac2d5e154e6cced51e5c09eb9fcbaf77fe7cd97855b17e78876e31de4ce6f0'}
+        reviewed_binary_hashes = {'fonts/fira-code-latin.woff': '0d6cd41d86ddcb021c765e2286f150dddbea5f13db0a24fcc5abc94767760d87', 'silk-road.webp': '5609dd6512d91d1bc4f2c27663cf71b30d9d33801749195c295a3da8a555dc45', 'silk-road-small.webp': 'ebb50acbc70f8a297da96810f30f17d63f50d42a19f85c52a2d0dcf43eedc439'}
         if relative in reviewed_binary_hashes:
             if hashlib.sha256(path.read_bytes()).hexdigest() != reviewed_binary_hashes[relative]:
                 errors.append("Public binary differs from the reviewed asset: " + relative)

@@ -1,0 +1,19 @@
+-- OPERATOR-REVIEWED TEMPLATE, not automatically executed. Replace
+-- silk_mailbox_runtime with an existing approved runtime role. Account/role
+-- creation, credentials and managed-provider selection need separate approval.
+-- Runtime must not own schema/tables, inherit owner/admin memberships, have
+-- CREATE/CREATEROLE/SUPERUSER/BYPASSRLS, or connect as the migration authority.
+GRANT USAGE ON SCHEMA silk_mailbox TO silk_mailbox_runtime;
+GRANT SELECT ON ALL TABLES IN SCHEMA silk_mailbox TO silk_mailbox_runtime;
+-- PostgreSQL row-locking SELECT requires UPDATE privilege on at least one
+-- column. Sentinel-only privilege cannot change identity/consent/capacity.
+GRANT UPDATE(lock_version) ON silk_mailbox.agents, silk_mailbox.agent_bindings,
+    silk_mailbox.pair_quotas, silk_mailbox.mailbox_limits TO silk_mailbox_runtime;
+GRANT UPDATE(used_turns,revoked_at) ON silk_mailbox.pair_grants TO silk_mailbox_runtime;
+GRANT INSERT ON silk_mailbox.messages,silk_mailbox.receipts TO silk_mailbox_runtime;
+GRANT UPDATE(text) ON silk_mailbox.messages TO silk_mailbox_runtime;
+-- No runtime INSERT/DELETE on identity, bindings, consent grants or settings;
+-- no runtime UPDATE/DELETE on receipts; no runtime DELETE/TRUNCATE anywhere.
+-- Audit ambient privileges separately, including PUBLIC CREATE on public for
+-- old clusters and TEMP/CREATE on the database. Do not blindly revoke privileges
+-- on unrelated shared databases. A dedicated database is recommended.

@@ -4,10 +4,11 @@
   "outputDirectory": "public",
   "buildCommand": "python3 scripts/check_deploy.py",
   "public": false,
+  "git": {"deploymentEnabled": false},
   "functions": {
     "api/*.py": {
       "maxDuration": 10,
-      "excludeFiles": "{silk/**,web/**,tests/**,production_tests/**,docs/**,artifacts/**,var/**,scripts/**,**/__pycache__/**,**/*.sqlite3,**/*.sqlite3-*,**/*.db,**/*.zip,requirements-dev.txt}"
+      "excludeFiles": "{services/**,silk/**,web/**,tests/**,production_tests/**,docs/**,artifacts/**,var/**,scripts/**,**/__pycache__/**,**/*.sqlite3,**/*.sqlite3-*,**/*.db,**/*.zip,requirements-dev.txt}"
     }
   },
   "headers": [

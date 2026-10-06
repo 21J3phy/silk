@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://silk-landing.onrender.com/sitemap.xml

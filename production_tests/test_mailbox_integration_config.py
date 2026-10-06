@@ -11,8 +11,8 @@ EXPECTED_PUBLIC_FILES = {
     'scripts/check_deploy.py',
     'api/status.py', 'api/messages.py', 'api/connections.py',
     'production/__init__.py', 'production/http.py', 'production/readiness.py', 'production/interfaces.py',
-    'public/index.html', 'public/styles.css', 'public/app.js', 'public/favicon.svg',
-}
+} | {'public/' + name for name in __import__('scripts.check_deploy', fromlist=['PUBLIC_FILES']).PUBLIC_FILES}
+
 
 
 class MailboxIntegrationConfigurationTests(unittest.TestCase):
@@ -53,7 +53,7 @@ class MailboxIntegrationConfigurationTests(unittest.TestCase):
     def test_public_packaging_allowlist_has_no_mailbox_files(self):
         tree = ast.parse((ROOT / 'scripts' / 'package_public.py').read_text())
         runtime = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'RUNTIME_FILES' for target in node.targets))
-        public_assets = [p.relative_to(ROOT).as_posix() for p in (ROOT / 'public').iterdir() if p.is_file()]
+        public_assets = [p.relative_to(ROOT).as_posix() for p in (ROOT / 'public').rglob('*') if p.is_file()]
         selected = set(runtime) | set(public_assets)
         self.assertEqual(selected, EXPECTED_PUBLIC_FILES)
         self.assertFalse(any(path.startswith('services/') for path in selected))

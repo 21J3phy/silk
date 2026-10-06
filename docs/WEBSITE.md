@@ -54,3 +54,7 @@ Primary-page CSP metadata is stricter (no scripts or network connections), but f
 - [OpenAI crawler documentation](https://developers.openai.com/api/docs/bots): crawler controls and their distinct uses.
 
 Search engines decide crawling, indexing, ranking, and result presentation independently.
+
+## Repository visibility
+
+GitHub metadata verified that the source repository is private. Public source links explicitly require repository access; public agent docs remain self-contained. No repository sharing or permission changes are part of this website release.

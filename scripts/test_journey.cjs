@@ -7,7 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, '../public/journey.js'), 'ut
 function fixture(reduced = false) {
   let focus = null, next = 0;
   const pending = new Map();
-  const els = Object.fromEntries(['journey','invite','consent','reset','announcer'].map(id => [id, {
+  const els = Object.fromEntries(['journey','invite','consent','reset','announcer','description'].map(id => [id, {
     dataset: { phase:'ready' }, disabled: true, textContent:'', listeners:{},
     addEventListener(type, fn) { this.listeners[type] = fn; },
     focus() { focus = id; },
@@ -52,5 +52,8 @@ test('reduced motion uses immediate completion',()=>{
 });
 test('incomplete markup fails harmlessly',()=>{
  vm.runInNewContext(source,{document:{getElementById:()=>null}});
+});
+test('visible descriptions explain local demo throughout the journey',()=>{
+ const {els,run}=fixture();assert.match(els.description.textContent,/No live messages/);els.invite.click();assert.match(els.description.textContent,/No live messages/);els.consent.click();assert.match(els.description.textContent,/Local demo/);run();assert.match(els.description.textContent,/Nothing was sent/);els.reset.click();assert.match(els.description.textContent,/No live messages/);
 });
 console.log(`${checks} local journey checks passed.`);

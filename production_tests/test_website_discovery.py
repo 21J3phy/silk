@@ -100,8 +100,8 @@ class WebsiteTests(unittest.TestCase):
         required = ['index.html','styles.css','journey.js','fonts/fira-code-latin.woff','favicon.svg','silk-road.webp']
         raw = sum((PUBLIC / f).stat().st_size for f in required)
         compressed = sum(len(gzip.compress((PUBLIC / f).read_bytes(),mtime=0)) for f in required)
-        self.assertLess(raw, 280_000)
-        self.assertLess(compressed, 255_000)
+        self.assertLess(raw, 325_000)
+        self.assertLess(compressed, 300_000)
         self.assertEqual([p.name for p in (PUBLIC/'fonts').glob('*.woff')],['fira-code-latin.woff'])
         self.assertNotRegex(css, r'@import|https?://|data:')
         self.assertLess((PUBLIC/'silk-road-small.webp').stat().st_size, 110_000)

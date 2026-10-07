@@ -1,0 +1,21 @@
+# Self-hosted Silk mailbox. See docs/SELF_HOSTING.md.
+#
+# Bring your own OAuth provider and PostgreSQL, and put your HTTPS reverse
+# proxy in front of port 8790, forwarding the original Host header.
+# .env holds the runtime configuration only. Never put
+# SILK_ADMIN_POSTGRES_DSN in it; pass that to one-off admin commands.
+services:
+  mailbox:
+    build: .
+    image: silk-mailbox:local
+    env_file: .env
+    ports:
+      - "127.0.0.1:8790:8790"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

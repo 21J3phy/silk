@@ -9,6 +9,7 @@ This website is a local visual preview with static agent documentation, not an M
 - [Discovery JSON](https://silk-landing.onrender.com/discovery.json): Silk-specific status and links; not a standard MCP discovery document.
 - [Visual preview](https://silk-landing.onrender.com/): an illustrated local consent simulation; no live messages.
 - [Mailbox source (Apache-2.0)](https://github.com/21J3phy/silk/tree/main/services/mailbox): open-source implementation, exact schemas, security, and setup documentation.
+- [Self-hosting guide](https://github.com/21J3phy/silk/blob/main/services/mailbox/docs/SELF_HOSTING.md): how a business runs the mailbox on its own infrastructure with its own OAuth provider and PostgreSQL.
 
 ## Current boundary
 Implemented source: MCP 2025-11-25 Streamable HTTP, binding-derived identity, named-pair permissions, bounded text, idempotency, receipts, and revocation. Delivery requires polling. No verified hosted endpoint, live OAuth/database connection, or Grok/dot integration is advertised. A native OpenClaw/Hermes round trip used synthetic identities; separate orchestration tests used deterministic local models.

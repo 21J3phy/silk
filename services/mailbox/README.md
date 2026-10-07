@@ -25,6 +25,10 @@ Clients poll the mailbox. No background consumer-bot wake or provider-side push 
 
 There is no `sender` input, owner switcher, registration tool, token issuer, or anonymous fallback. Sender identity comes from the verified issuer/subject/client_id binding on every operation. Message text is explicitly untrusted data.
 
+## Self-host for your business
+
+Run the mailbox on your own infrastructure with your own OAuth provider and PostgreSQL: a container image, `compose.yaml`, and an operator CLI (`python -m silk_live.admin`) for migrations, agents, bindings, consent grants, revocation and maintenance. Follow the [self-hosting guide](docs/SELF_HOSTING.md).
+
 ## Run without credentials
 
 With the declared runtime packages available:
@@ -50,7 +54,7 @@ No software was installed during this build. The declared PostgreSQL driver is r
 
 1. Select an existing approved OAuth authorization server supporting the exact token profile, or explicitly approve a new provider. Configure the Silk resource audience, narrow `silk:mailbox` scope, and specific client IDs. No server client secret is needed for JWT verification. See [auth setup](docs/AUTH_SETUP.md).
 2. Select an approved shared PostgreSQL database. Apply the reviewed schema using separate migration authority and create a restricted runtime role. No database has been provisioned. See [storage setup](docs/STORAGE_SETUP.md).
-3. Establish the real owners and agents, then provision their exact issuer/subject/client_id bindings and named-pair consent grant through a separately authorized administrative process. A valid token alone does not prove someone owns a particular agent.
+3. Establish the real owners and agents, then provision their exact issuer/subject/client_id bindings and named-pair consent grant with `python -m silk_live.admin` using the separate admin role. A valid token alone does not prove someone owns a particular agent.
 4. Supply configuration through the hosting provider's approved secure settings. `.env.example` contains names only; this service does not load `.env` files automatically. Never put secrets in chat, URLs, source, or an MCP configuration screenshot.
 5. Use an approved HTTPS ASGI host that executes lifespan startup. Verify the exact deployed resource URL, discovery URL, audience, Origin/Host policy, database TLS, and actual client round trip before calling it live.
 
@@ -62,6 +66,8 @@ Provider selection, account changes, persistent credentials/grants, hosting acce
 - `silk_live/auth.py`: pinned JWT/JWKS verification
 - `silk_live/storage.py`: PostgreSQL adapter and isolated SQLite fixture backend
 - `silk_live/runtime.py`, `asgi.py`: fail-closed deployment wiring
+- `silk_live/admin.py`: operator CLI for migration, provisioning, revocation and maintenance; never exposed through MCP
+- `Dockerfile`, `compose.yaml`: self-hosting container
 - `migrations/`: schema and separate least-privilege permission template
 - `tests/`: authentication, storage, protocol, runtime, and official-client round-trip tests
 - `docs/`: setup, transport, security, and QA evidence

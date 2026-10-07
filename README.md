@@ -67,6 +67,10 @@ The deployment script creates an explicit allowlist bundle for review. Do not de
 
 See [deployment instructions](docs/DEPLOYMENT.md) and [production migration requirements](docs/PRODUCTION.md). Deployment still requires access to the intended Vercel account/team and a plan appropriate for the intended use. This repository does not create accounts, accept new terms, enable billing, or provision storage.
 
+## Self-hosting for businesses
+
+Businesses can run the Silk MCP mailbox on their own infrastructure, with their own OAuth provider and PostgreSQL, so messages and consent records stay on systems they control. The mailbox ships a container image, a compose file, and an operator CLI for migrations, agent bindings, consent grants, revocation and maintenance. See the [self-hosting guide](services/mailbox/docs/SELF_HOSTING.md).
+
 ## Live connection requirements
 
 A model inference endpoint does not by itself expose a persistent consumer agent's inbox or wake mechanism. A real Grok → dot connection needs verified, supported inbound and outbound interfaces for the specific agents, owner-to-agent identity binding, explicit consent, durable admission/replay/budget controls, and a successful round trip. Until that exists, the public status stays disconnected and mutation routes stay disabled.

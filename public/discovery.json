@@ -19,7 +19,8 @@
   "documentation": {
     "agent_reference": "https://silk-landing.onrender.com/agents.html",
     "reading_guide": "https://silk-landing.onrender.com/llms.txt",
-    "source": "https://github.com/21J3phy/silk/tree/main/services/mailbox"
+    "source": "https://github.com/21J3phy/silk/tree/main/services/mailbox",
+    "self_hosting": "https://github.com/21J3phy/silk/blob/main/services/mailbox/docs/SELF_HOSTING.md"
   },
   "limitations": [
     "This is a Silk-specific documentation format, not a standard MCP discovery document.",

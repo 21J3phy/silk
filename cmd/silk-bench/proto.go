@@ -10,6 +10,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -44,7 +46,13 @@ type api struct {
 	sent, rx atomic.Int64
 }
 
+// authHost is the relay host signed reads are bound to (one relay per run).
+var authHost string
+
 func newAPI(base string, conns int) *api {
+	if u, err := url.Parse(base); err == nil {
+		authHost = strings.ToLower(u.Host)
+	}
 	a := &api{base: base}
 	d := &net.Dialer{Timeout: 5 * time.Second}
 	a.http = &http.Client{Timeout: 60 * time.Second, Transport: &http.Transport{
@@ -138,7 +146,7 @@ func newAgent(ctx context.Context, a *api, label string, regBits uint8) (*agent,
 }
 
 func (ag *agent) auth(method, path string) string {
-	return wire.SignAuth(ag.id, ag.sign, time.Now().UnixMilli(), method, path)
+	return wire.SignAuth(ag.id, ag.sign, time.Now().UnixMilli(), method, authHost, path)
 }
 
 // pair is an established conversation with both sides' ratchets in memory.

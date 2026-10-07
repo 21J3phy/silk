@@ -125,6 +125,11 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() {
+				if p := recover(); p != nil { // one bad call must never take the server down
+					s.send(rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32603, Message: fmt.Sprintf("internal error: %v", p)}})
+				}
+			}()
 			result, rerr := s.handle(ctx, &req)
 			s.send(rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result, Error: rerr})
 		}()

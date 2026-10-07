@@ -114,11 +114,17 @@ func (h *httpAPI) wrap(next http.Handler) http.Handler {
 
 func (h *httpAPI) clientIP(req *http.Request) string {
 	if h.o.TrustProxy {
-		if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
-			return strings.TrimSpace(strings.Split(xff, ",")[0])
+		// Vercel sets this itself; clients cannot forge it.
+		if v := req.Header.Get("X-Vercel-Forwarded-For"); v != "" {
+			return strings.TrimSpace(strings.Split(v, ",")[0])
 		}
 		if ip := req.Header.Get("X-Real-Ip"); ip != "" {
 			return ip
+		}
+		// Otherwise trust only the address our own proxy appended (the last entry).
+		if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[len(parts)-1])
 		}
 	}
 	host, _, err := net.SplitHostPort(req.RemoteAddr)
@@ -233,9 +239,20 @@ func (h *httpAPI) register(w http.ResponseWriter, req *http.Request) {
 func (h *httpAPI) agent(w http.ResponseWriter, req *http.Request) {
 	var from wire.ID
 	if f := req.URL.Query().Get("from"); f != "" {
+		// A sender-specific price reveals whether the sender is trusted and its
+		// penalty, so only the sender itself may ask (signed request).
 		id, err := wire.ParseID(f)
 		if err != nil {
 			writeErr(w, errf(400, "invalid_ref", "from must be an agent id"))
+			return
+		}
+		authed, err := h.authenticate(req)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		if authed != id {
+			writeErr(w, errf(403, "not_you", "a sender-specific price can only be requested by that sender"))
 			return
 		}
 		from = id
@@ -305,6 +322,11 @@ func (h *httpAPI) batch(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
+	if len(frames) > 1 && !h.post.allowN(h.clientIP(req), float64(len(frames)-1)) {
+		w.Header().Set("Retry-After", "1")
+		writeErr(w, errf(429, "slow_down", "too many frames from this address"))
+		return
+	}
 	out := make([]BatchItem, len(frames))
 	var wg sync.WaitGroup
 	for i, f := range frames {
@@ -341,11 +363,11 @@ func (h *httpAPI) authenticate(req *http.Request) (wire.ID, error) {
 	if d := time.Since(time.UnixMilli(p.TS)); d > 2*time.Minute || d < -2*time.Minute {
 		return wire.ID{}, errf(401, "auth_expired", "request signature is outside the 2 minute window")
 	}
-	c, err := h.r.AuthCert(req.Context(), p.Agent)
+	pub, err := h.r.AuthKey(req.Context(), p.Agent)
 	if err != nil {
 		return wire.ID{}, err
 	}
-	if !p.Verify(c.SignPub[:], req.Method, req.URL.RequestURI()) {
+	if !p.Verify(pub, req.Method, req.Host, req.URL.RequestURI()) {
 		return wire.ID{}, errf(401, "auth_invalid", "request signature does not verify")
 	}
 	return p.Agent, nil
@@ -571,7 +593,10 @@ type bucket struct {
 
 func newLimiter(rate float64) *limiter { return &limiter{rate: rate, b: map[string]*bucket{}} }
 
-func (l *limiter) allow(key string) bool {
+func (l *limiter) allow(key string) bool { return l.allowN(key, 1) }
+
+// allowN takes n tokens at once (all or nothing).
+func (l *limiter) allowN(key string, n float64) bool {
 	if l.rate < 0 {
 		return true
 	}
@@ -601,10 +626,10 @@ func (l *limiter) allow(key string) bool {
 		b.tokens = burst
 	}
 	b.last = now
-	if b.tokens < 1 {
+	if b.tokens < n {
 		return false
 	}
-	b.tokens--
+	b.tokens -= n
 	return true
 }
 
@@ -628,6 +653,10 @@ func (h *httpAPI) manifest(w http.ResponseWriter, req *http.Request) {
 	rel, err := wire.DecodeRelease(info.Frame)
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if !h.r.VerifyRelease(rel) {
+		writeErr(w, errf(500, "release_unverified", "the stored release does not verify against this relay's release keys"))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -62,6 +62,9 @@ func newEnv(t *testing.T, cfg relay.Config) *env {
 		cfg.IntroBaseBits = 8
 	}
 	cfg.PollInterval = 50 * time.Millisecond
+	if cfg.PolicyEvery == 0 {
+		cfg.PolicyEvery = time.Millisecond
+	}
 	r := relay.New(store, signer, cfg, nil)
 	srv := httptest.NewServer(relay.Handler(r, relay.HTTPOptions{PostRate: -1, GetRate: -1, RegisterRate: -1}))
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

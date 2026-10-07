@@ -186,6 +186,24 @@ func ago(ms int64) string {
 	return d.String() + " ago"
 }
 
+// safeText neutralizes terminal control sequences in peer-written text:
+// everything below U+0020 (except newline and tab), DEL, and C1 controls is
+// shown escaped instead of being interpreted by the terminal.
+func safeText(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\t':
+			b.WriteRune(r)
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0):
+			fmt.Fprintf(&b, "\\x%02x", r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func peerName(id, handle string) string {
 	if handle != "" {
 		return "@" + handle
@@ -591,7 +609,7 @@ func run(ctx context.Context, cmd string, args []string) error {
 					fmt.Fprintf(w, "%s  from %s  ERROR: %s\n", m.ID, peerName(m.From, m.FromHandle), m.Error)
 					continue
 				}
-				fmt.Fprintf(w, "%s  from %s  %s%s\n  %s\n", m.ID, peerName(m.From, m.FromHandle), ago(m.SentMs), state, strings.ReplaceAll(m.Body, "\n", "\n  "))
+				fmt.Fprintf(w, "%s  from %s  %s%s\n  %s\n", m.ID, peerName(m.From, m.FromHandle), ago(m.SentMs), state, strings.ReplaceAll(safeText(m.Body), "\n", "\n  "))
 			}
 		})
 		return nil
@@ -942,6 +960,7 @@ func publishRelease(ctx context.Context, args []string) error {
 	urlMap := fs.String("url-map", "", "JSON file mapping binary file names to their exact public URLs (overrides --url-base)")
 	relayURL := fs.String("relay", DefaultRelay, "relay to publish to")
 	notes := fs.String("notes", "", "release notes")
+	record := fs.String("record", "releases", "directory to record the published manifest in (<version>.json)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1010,6 +1029,14 @@ func publishRelease(ctx context.Context, args []string) error {
 	}
 	if err := os.WriteFile(filepath.Join(*dir, "manifest.json"), body, 0o644); err != nil {
 		return err
+	}
+	if *record != "" {
+		if err := os.MkdirAll(*record, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(*record, *ver+".json"), body, 0o644); err != nil {
+			return err
+		}
 	}
 	fmt.Printf("Published silk %s: %d builds, ledger #%d.\n", *ver, len(m.Files), res.LedgerIdx)
 	return nil

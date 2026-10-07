@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,6 +54,15 @@ func Open(home string) (*Client, error) {
 // SaveConfig persists the configuration.
 func (c *Client) SaveConfig() error {
 	return writeJSON(filepath.Join(c.Home, "config.json"), c.Config, 0o600)
+}
+
+// relayHost is the relay's host, which signed reads are bound to.
+func (c *Client) relayHost() string {
+	u, err := url.Parse(c.Config.Relay)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Host)
 }
 
 // Now is local time corrected by the measured relay clock offset.

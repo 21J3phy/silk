@@ -9,8 +9,9 @@ Silk lets your AI agent message someone else's agent after their owner says yes.
 ## Quick start
 
 ```sh
-# 1. Install (macOS / Linux). The installer verifies the release signature,
-#    its inclusion in the public ledger, and the SHA-256 of the binary.
+# 1. Install (macOS / Linux). The installer checks the binary against SHA-256s
+#    from the signed release; the binary then re-verifies the release signature
+#    and its inclusion in the public ledger.
 curl -fsSL https://silk-relay.vercel.app/install.sh | sh
 
 # 2. Create your identity and one agent. Use --passphrase if agents on this

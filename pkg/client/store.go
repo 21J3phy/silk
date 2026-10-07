@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/21J3phy/silk/pkg/seal"
+	"github.com/21J3phy/silk/pkg/wire"
 )
 
 // Config is the per-home configuration.
@@ -172,17 +173,37 @@ func loadOwner(path string, passphrase func() (string, error)) (ed25519.PrivateK
 // Agent keys
 
 type keyFile struct {
-	Serial   uint32            `json:"serial"`
-	SignSeed []byte            `json:"sign_seed"`
-	KEM      []byte            `json:"kem"`
-	Previous map[uint32][]byte `json:"previous_kem,omitempty"` // serial -> KEM private key (kept for pending intros)
+	Serial   uint32             `json:"serial"`
+	SignSeed []byte             `json:"sign_seed"`
+	KEM      []byte             `json:"kem"`
+	Legacy   map[uint32][]byte  `json:"previous_kem,omitempty"` // older format, read only
+	Previous map[uint32]oldKey  `json:"previous,omitempty"`     // serial -> retired KEM key
+}
+
+type oldKey struct {
+	KEM     []byte `json:"kem"`
+	Retired int64  `json:"retired_ms"`
 }
 
 type agentKeys struct {
-	serial uint32
-	sign   ed25519.PrivateKey
-	kem    *seal.KEMKey
-	prev   map[uint32]*seal.KEMKey
+	serial  uint32
+	sign    ed25519.PrivateKey
+	kem     *seal.KEMKey
+	prev    map[uint32]*seal.KEMKey
+	retired map[uint32]int64
+}
+
+// retire keeps a replaced encryption key only as long as a contact request
+// sent to it can still be pending, then forgets it.
+func (k *agentKeys) retire(serial uint32, kem *seal.KEMKey, now int64) {
+	k.prev[serial] = kem
+	k.retired[serial] = now
+	for s, t := range k.retired {
+		if now-t > (wire.MaxIntroTTL + 24*time.Hour).Milliseconds() {
+			delete(k.prev, s)
+			delete(k.retired, s)
+		}
+	}
 }
 
 func loadKeys(path string) (*agentKeys, error) {
@@ -193,14 +214,19 @@ func loadKeys(path string) (*agentKeys, error) {
 	if len(f.SignSeed) != ed25519.SeedSize {
 		return nil, errors.New("agent key file is corrupt")
 	}
-	k := &agentKeys{serial: f.Serial, sign: ed25519.NewKeyFromSeed(f.SignSeed), prev: map[uint32]*seal.KEMKey{}}
+	k := &agentKeys{serial: f.Serial, sign: ed25519.NewKeyFromSeed(f.SignSeed), prev: map[uint32]*seal.KEMKey{}, retired: map[uint32]int64{}}
 	var err error
 	if k.kem, err = seal.LoadKEMKey(f.KEM); err != nil {
 		return nil, fmt.Errorf("agent kem key: %w", err)
 	}
-	for s, b := range f.Previous {
+	for s, b := range f.Legacy {
 		if pk, err := seal.LoadKEMKey(b); err == nil {
-			k.prev[s] = pk
+			k.prev[s], k.retired[s] = pk, time.Now().UnixMilli()
+		}
+	}
+	for s, o := range f.Previous {
+		if pk, err := seal.LoadKEMKey(o.KEM); err == nil {
+			k.prev[s], k.retired[s] = pk, o.Retired
 		}
 	}
 	return k, nil
@@ -209,9 +235,9 @@ func loadKeys(path string) (*agentKeys, error) {
 func (k *agentKeys) save(path string) error {
 	f := keyFile{Serial: k.serial, SignSeed: k.sign.Seed(), KEM: k.kem.Bytes()}
 	if len(k.prev) > 0 {
-		f.Previous = map[uint32][]byte{}
+		f.Previous = map[uint32]oldKey{}
 		for s, pk := range k.prev {
-			f.Previous[s] = pk.Bytes()
+			f.Previous[s] = oldKey{KEM: pk.Bytes(), Retired: k.retired[s]}
 		}
 	}
 	return writeJSON(path, f, 0o600)
@@ -256,6 +282,7 @@ type Sent struct {
 	Status     string `json:"status"`          // "queued", "accepted", outcome name, or "failed: code"
 	AckIdx     int64  `json:"ack_ledger_index,omitempty"`
 	Preview    string `json:"preview,omitempty"`
+	Hash       []byte `json:"hash,omitempty"` // SHA-256 of the frame, for ledger audits
 }
 
 // GrantInfo is a conversation the agent can use.
@@ -289,6 +316,9 @@ type OutIntro struct {
 	LedgerIdx int64  `json:"ledger_index"`
 	PoWBits   uint8  `json:"pow_bits"`
 	PoWMs     int64  `json:"pow_ms"`
+	Budget    uint32 `json:"budget,omitempty"`
+	GrantTTL  uint32 `json:"grant_ttl_s,omitempty"`
+	Frame     []byte `json:"frame,omitempty"` // kept until the relay confirms it
 }
 
 // InIntro is a contact request awaiting the owner's decision.
@@ -305,6 +335,7 @@ type InIntro struct {
 	LedgerIdx  int64  `json:"ledger_index"`
 	PoWBits    uint8  `json:"pow_bits"`
 	Status     string `json:"status"`
+	GrantFrame []byte `json:"grant_frame,omitempty"` // an approval awaiting relay confirmation
 }
 
 // Contact caches a verified peer certificate.
@@ -324,6 +355,7 @@ type agentState struct {
 	Inbox      []*Message               `json:"inbox"`
 	Sent       []*Sent                  `json:"sent"`
 	Contacts   map[string]*Contact      `json:"contacts"`
+	Handles    map[string]string        `json:"handles,omitempty"` // @handle -> agent ID pinned on first use
 }
 
 func newState() *agentState {

@@ -50,6 +50,12 @@ type Config struct {
 	SweepEvery              time.Duration // expiry sweep cadence (default 30s)
 	// ReleaseKeys are the Ed25519 keys allowed to publish software releases.
 	ReleaseKeys []ed25519.PublicKey
+	// PolicyEvery is the minimum time between an agent's policy changes (default 30s);
+	// each change is a permanent ledger entry and costs no postage.
+	PolicyEvery time.Duration
+	// MaxPendingPerGrant caps undelivered messages per conversation direction (default 1000),
+	// so one peer cannot fill a recipient's whole inbox.
+	MaxPendingPerGrant uint32
 	// IgnoreGrantRate disables per-grant per-minute rate windows. Benchmarks only:
 	// throughput tests would otherwise measure the rate limiter, not the relay.
 	IgnoreGrantRate bool
@@ -77,6 +83,12 @@ func (c *Config) defaults() {
 	if c.MaxPendingPerInbox == 0 {
 		c.MaxPendingPerInbox = 50000
 	}
+	if c.MaxPendingPerGrant == 0 {
+		c.MaxPendingPerGrant = 1000
+	}
+	if c.PolicyEvery == 0 {
+		c.PolicyEvery = 30 * time.Second
+	}
 	if c.PollInterval == 0 {
 		c.PollInterval = time.Second
 	}
@@ -93,7 +105,8 @@ type Relay struct {
 	now    func() time.Time
 	notify notifier
 
-	certs     sync.Map // wire.ID -> *wire.Cert (verification cache; rechecked in-transaction)
+	certs     sync.Map // wire.ID -> cachedCertEntry (short-lived; every use is rechecked in-transaction)
+	nCerts    atomic.Int64
 	grants    sync.Map // wire.ID -> *wire.Grant (immutable frames; status is always read in-transaction)
 	nGrants   atomic.Int64
 	cp        atomic.Pointer[signedCheckpoint]
@@ -224,17 +237,33 @@ func expiryKey(ms int64, kind wire.Kind, id wire.ID) []byte {
 }
 
 func skewOK(created, now int64) bool {
-	d := time.Duration(created-now) * time.Millisecond
-	return d <= wire.MaxClockSkew && d >= -wire.MaxClockSkew
+	skew := wire.MaxClockSkew.Milliseconds()
+	return created > 0 && created < wire.MaxTime && created-now <= skew && now-created <= skew
 }
 
 func certLive(c *wire.Cert, now int64) bool { return c.Expires > now }
 
 // cachedCert returns a certificate for signature checks outside the write transaction.
+type cachedCertEntry struct {
+	cert *wire.Cert
+	at   time.Time
+}
+
+// certTTL bounds how long another instance's rotation can go unnoticed for
+// signature checks outside the write transaction (in-transaction checks are exact).
+const certTTL = 15 * time.Second
+
 func (r *Relay) cachedCert(ctx context.Context, id wire.ID) (*wire.Cert, error) {
-	if c, ok := r.certs.Load(id); ok {
-		return c.(*wire.Cert), nil
+	if v, ok := r.certs.Load(id); ok {
+		if e := v.(cachedCertEntry); time.Since(e.at) < certTTL {
+			return e.cert, nil
+		}
 	}
+	return r.freshCert(ctx, id)
+}
+
+// freshCert reads the current certificate, bypassing the cache.
+func (r *Relay) freshCert(ctx context.Context, id wire.ID) (*wire.Cert, error) {
 	var rec *agentRec
 	err := r.store.View(ctx, func(tx kv.Tx) error {
 		var err error
@@ -248,9 +277,34 @@ func (r *Relay) cachedCert(ctx context.Context, id wire.ID) (*wire.Cert, error) 
 		return nil, errf(404, "unknown_agent", "agent %s is not registered", id)
 	}
 	if rec.Status == statusActive {
-		r.certs.Store(id, rec.Cert)
+		if r.nCerts.Add(1) > 100_000 {
+			r.certs.Clear()
+			r.nCerts.Store(0)
+		}
+		r.certs.Store(id, cachedCertEntry{cert: rec.Cert, at: time.Now()})
 	}
 	return rec.Cert, nil
+}
+
+// verifiedCert returns the sender's certificate whose signing key verifies,
+// refetching once if the cached key fails (the agent may have rotated keys
+// through another relay instance).
+func (r *Relay) verifiedCert(ctx context.Context, id wire.ID, ok func(pub []byte) bool) (*wire.Cert, error) {
+	c, err := r.cachedCert(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if ok(c.SignPub[:]) {
+		return c, nil
+	}
+	f, err := r.freshCert(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if f.SignPub != c.SignPub && ok(f.SignPub[:]) {
+		return f, nil
+	}
+	return nil, errf(401, "invalid_signature", "signature does not verify for agent %s", id)
 }
 
 // currentCert re-reads the agent inside the transaction and checks the key used for verification is still current.
@@ -305,6 +359,17 @@ func (r *Relay) Submit(ctx context.Context, frame []byte) (*Result, error) {
 		return nil, errf(400, "malformed", "%v", err)
 	}
 	r.maybeSweep(ctx)
+	res, err := r.dispatch(ctx, kind, frame)
+	var e *Error
+	if errors.As(err, &e) && e.Code == "key_rotated" {
+		r.certs.Clear() // another instance saw a rotation first; verify again with fresh keys
+		r.nCerts.Store(0)
+		res, err = r.dispatch(ctx, kind, frame)
+	}
+	return res, err
+}
+
+func (r *Relay) dispatch(ctx context.Context, kind wire.Kind, frame []byte) (*Result, error) {
 	switch kind {
 	case wire.KindIntro:
 		return r.submitIntro(ctx, frame)
@@ -630,12 +695,9 @@ func (r *Relay) submitIntro(ctx context.Context, frame []byte) (*Result, error) 
 	if in.PoWBits > 0 && !pow.Check(pow.Digest(pow.DomainIntro, in.PoWPrefix()), in.PoWBits, in.PoWNonce) {
 		return nil, errf(402, "pow_required", "the proof-of-work stamp is invalid")
 	}
-	sc, err := r.cachedCert(ctx, in.From)
+	sc, err := r.verifiedCert(ctx, in.From, in.VerifySig)
 	if err != nil {
 		return nil, err
-	}
-	if !in.VerifySig(sc.SignPub[:]) {
-		return nil, errf(401, "invalid_signature", "intro signature does not verify for sender %s", in.From)
 	}
 	res := &Result{Kind: "intro", ID: in.IntroID.String()}
 	var evicted *wire.ID
@@ -681,7 +743,7 @@ func (r *Relay) submitIntro(ctx context.Context, frame []byte) (*Result, error) 
 			if tk.Expires <= st.now {
 				return errf(410, "invite_expired", "the invite has expired")
 			}
-			ticketKey = kv.Key(bTicketUsed, tk.TicketID[:])
+			ticketKey = kv.Key(bTicketUsed, tk.Recipient[:], tk.TicketID[:])
 			if v, err := st.tx.Get(ticketKey); err != nil {
 				return err
 			} else if v != nil {
@@ -792,10 +854,10 @@ func trusts(tx kv.Tx, recipient wire.ID, rc *wire.Cert, sender wire.ID, sc *wire
 	if err != nil {
 		return false, err
 	}
-	if pv == nil {
+	if len(pv) <= 8 {
 		return sc.OwnerPub == rc.OwnerPub, nil
 	}
-	pol, err := wire.DecodePolicy(append([]byte{}, pv...))
+	pol, err := wire.DecodePolicy(append([]byte{}, pv[8:]...))
 	if err != nil {
 		return false, errCorrupt
 	}
@@ -857,6 +919,7 @@ func closeIntro(st *txState, rec *introRec, status uint8) error {
 // ---------------------------------------------------------------------------
 // Policy
 
+
 func (r *Relay) submitPolicy(ctx context.Context, frame []byte) (*Result, error) {
 	pol, err := wire.DecodePolicy(frame)
 	if err != nil {
@@ -880,8 +943,8 @@ func (r *Relay) submitPolicy(ctx context.Context, frame []byte) (*Result, error)
 		key := kv.Key(bPolicy, pol.Agent[:])
 		if v, err := st.tx.Get(key); err != nil {
 			return err
-		} else if v != nil {
-			old, err := wire.DecodePolicy(append([]byte{}, v...))
+		} else if len(v) > 8 {
+			old, err := wire.DecodePolicy(append([]byte{}, v[8:]...))
 			if err != nil {
 				return errCorrupt
 			}
@@ -892,13 +955,16 @@ func (r *Relay) submitPolicy(ctx context.Context, frame []byte) (*Result, error)
 			if pol.Serial <= old.Serial {
 				return errf(409, "stale_serial", "policy serial must exceed %d", old.Serial)
 			}
+			if st.now-int64(binary.BigEndian.Uint64(v)) < r.cfg.PolicyEvery.Milliseconds() {
+				return errf(429, "slow_down", "an agent's policy can change at most once every %v", r.cfg.PolicyEvery)
+			}
 		}
 		idx, err := st.ledger(wire.KindPolicy, frame)
 		if err != nil {
 			return err
 		}
 		res.LedgerIdx = idx
-		return st.tx.Put(key, frame)
+		return st.tx.Put(key, append(kv.U64(uint64(st.now)), frame...))
 	})
 	if err != nil {
 		return nil, err
@@ -916,6 +982,9 @@ func (r *Relay) submitGrant(ctx context.Context, frame []byte) (*Result, error) 
 	}
 	if !g.VerifySig() {
 		return nil, errf(401, "invalid_signature", "grant signature does not verify")
+	}
+	if err := r.precheckDecision(ctx, g.GrantID, g.IntroHash, g.OwnerPub, frame, true); err != nil {
+		return nil, err
 	}
 	res := &Result{Kind: "grant", ID: g.GrantID.String()}
 	err = r.update(ctx, func(st *txState) error {
@@ -947,6 +1016,9 @@ func (r *Relay) submitGrant(ctx context.Context, frame []byte) (*Result, error) 
 		in := ir.Intro
 		if wire.Hash(in.Raw) != g.IntroHash || g.From != in.From || g.To != in.To {
 			return errf(400, "grant_mismatch", "grant does not match the contact request")
+		}
+		if g.BudgetAB > in.Budget || g.BudgetBA > in.Budget || g.Expires-g.Created > int64(in.GrantTTL)*1000 {
+			return errf(400, "terms_exceed_request", "a grant may not allow more messages or time than the request asked for")
 		}
 		rc, err := currentCert(st, g.To, nil)
 		if err != nil {
@@ -993,6 +1065,9 @@ func (r *Relay) submitDecline(ctx context.Context, frame []byte) (*Result, error
 	if !d.VerifySig() {
 		return nil, errf(401, "invalid_signature", "decline signature does not verify")
 	}
+	if err := r.precheckDecision(ctx, d.IntroID, d.IntroHash, d.OwnerPub, frame, false); err != nil {
+		return nil, err
+	}
 	res := &Result{Kind: "decline", ID: d.IntroID.String()}
 	err = r.update(ctx, func(st *txState) error {
 		ir, err := getIntro(st.tx, d.IntroID)
@@ -1037,6 +1112,40 @@ func (r *Relay) submitDecline(ctx context.Context, frame []byte) (*Result, error
 		return nil, err
 	}
 	return res, nil
+}
+
+// precheckDecision rejects grants and declines that cannot succeed before they
+// reach the serialized writer: the intro must exist, match, and belong to an
+// agent owned by the signer. Exact replays of an accepted grant pass through so
+// they can be answered idempotently.
+func (r *Relay) precheckDecision(ctx context.Context, introID wire.ID, introHash [wire.HashLen]byte, owner [wire.PubLen]byte, frame []byte, isGrant bool) error {
+	return r.store.View(ctx, func(tx kv.Tx) error {
+		if isGrant {
+			if gr, err := getGrant(tx, introID); err != nil {
+				return err
+			} else if gr != nil {
+				return nil // duplicate or conflict: decided in the transaction
+			}
+		}
+		ir, err := getIntro(tx, introID)
+		if err != nil {
+			return err
+		}
+		if ir == nil {
+			return errf(404, "unknown_intro", "no contact request %s", introID)
+		}
+		if wire.Hash(ir.Intro.Raw) != introHash {
+			return errf(400, "decision_mismatch", "decision does not match the contact request")
+		}
+		ar, err := getAgent(tx, ir.Intro.To)
+		if err != nil {
+			return err
+		}
+		if ar == nil || ar.Cert.OwnerPub != owner {
+			return errf(403, "not_owner", "only the recipient agent's owner can decide this request")
+		}
+		return nil
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1087,12 +1196,9 @@ func (r *Relay) submitMsg(ctx context.Context, frame []byte) (*Result, error) {
 		return nil, err
 	}
 	sender, recipient := parties(g, m.Dir)
-	sc, err := r.cachedCert(ctx, sender)
+	sc, err := r.verifiedCert(ctx, sender, m.VerifySig)
 	if err != nil {
 		return nil, err
-	}
-	if !m.VerifySig(sc.SignPub[:]) {
-		return nil, errf(401, "invalid_signature", "message signature does not verify for sender %s", sender)
 	}
 	id := m.ID()
 	res := &Result{Kind: "msg", ID: id.String()}
@@ -1158,6 +1264,9 @@ func (r *Relay) submitMsg(ctx context.Context, frame []byte) (*Result, error) {
 		if ctr.WinCount[m.Dir] >= g.Rate && !r.cfg.IgnoreGrantRate {
 			return errf(429, "rate_limited", "grant allows %d messages per minute in this direction", g.Rate)
 		}
+		if ctr.Pending[m.Dir] >= r.cfg.MaxPendingPerGrant {
+			return errf(429, "backlog_full", "the recipient has %d unacknowledged messages in this conversation", ctr.Pending[m.Dir])
+		}
 		pending, err := getU64(st.tx, kv.Key(bStat, []byte("inbox."), recipient[:]))
 		if err != nil {
 			return err
@@ -1169,6 +1278,7 @@ func (r *Relay) submitMsg(ctx context.Context, frame []byte) (*Result, error) {
 			ctr.WinCount[m.Dir]++
 		}
 		ctr.Used[m.Dir]++
+		ctr.Pending[m.Dir]++
 		idx, err := st.ledger(wire.KindMsg, frame)
 		if err != nil {
 			return err
@@ -1218,6 +1328,21 @@ func closeMsg(st *txState, id wire.ID, mr *msgRec, status uint8) error {
 	if _, err := addU64(st.tx, kv.Key(bStat, []byte("inbox."), mr.Recipient[:]), -1); err != nil {
 		return err
 	}
+	ctrKey := kv.Key(bGrantCtr, mr.Grant[:])
+	if cv, err := st.tx.Get(ctrKey); err != nil {
+		return err
+	} else if cv != nil {
+		ctr, err := decodeGrantCtr(cv)
+		if err != nil {
+			return err
+		}
+		if ctr.Pending[mr.Dir] > 0 {
+			ctr.Pending[mr.Dir]--
+		}
+		if err := st.tx.Put(ctrKey, ctr.encode()); err != nil {
+			return err
+		}
+	}
 	return st.tx.Put(kv.Key(bMsg, id[:]), mr.encode())
 }
 
@@ -1239,8 +1364,7 @@ func (r *Relay) submitAck(ctx context.Context, frame []byte) (*Result, error) {
 	var verifiedCert *wire.Cert
 	// The acker must be the message recipient; try both grant parties' keys outside the transaction.
 	for _, party := range []wire.ID{g.From, g.To} {
-		c, err := r.cachedCert(ctx, party)
-		if err == nil && a.VerifySig(c.SignPub[:]) {
+		if c, err := r.verifiedCert(ctx, party, a.VerifySig); err == nil {
 			verifiedFor, verifiedCert = party, c
 			break
 		}
@@ -1249,7 +1373,7 @@ func (r *Relay) submitAck(ctx context.Context, frame []byte) (*Result, error) {
 		return nil, errf(401, "invalid_signature", "ack signature does not verify for either grant party")
 	}
 	err = r.update(ctx, func(st *txState) error {
-		if err := kv.Prefetch(st.tx, kv.Key(bMsg, a.MsgID[:]), kv.Key(bAgentKey, verifiedFor[:]), ledger.SizeKey(),
+		if err := kv.Prefetch(st.tx, kv.Key(bMsg, a.MsgID[:]), kv.Key(bAgentKey, verifiedFor[:]), ledger.SizeKey(), kv.Key(bGrantCtr, a.GrantID[:]),
 			kv.Key(bStat, []byte("acks")), kv.Key(bStat, []byte("inbox."), verifiedFor[:])); err != nil {
 			return err
 		}
@@ -1309,6 +1433,27 @@ func (r *Relay) submitRevoke(ctx context.Context, frame []byte) (*Result, error)
 	if !skewOK(v.Created, now) {
 		return nil, errf(400, "clock_skew", "revoke creation time is more than %v from relay time", wire.MaxClockSkew)
 	}
+	// Authenticate outside the writer: the grant frame is immutable, and owner
+	// keys never change for an agent address.
+	g0, err := r.cachedGrant(ctx, v.GrantID)
+	if err != nil {
+		return nil, err
+	}
+	if v.By != g0.From && v.By != g0.To {
+		return nil, errf(403, "not_participant", "only a grant participant can revoke it")
+	}
+	var signer *wire.Cert
+	if v.Role == wire.RoleOwner {
+		c, err := r.cachedCert(ctx, v.By)
+		if err != nil {
+			return nil, err
+		}
+		if !v.VerifySig(c.OwnerPub[:]) {
+			return nil, errf(401, "invalid_signature", "revoke signature does not verify")
+		}
+	} else if signer, err = r.verifiedCert(ctx, v.By, v.VerifySig); err != nil {
+		return nil, err
+	}
 	res := &Result{Kind: "revoke", ID: v.GrantID.String()}
 	err = r.update(ctx, func(st *txState) error {
 		gr, err := getGrant(st.tx, v.GrantID)
@@ -1319,22 +1464,10 @@ func (r *Relay) submitRevoke(ctx context.Context, frame []byte) (*Result, error)
 			return errf(404, "unknown_grant", "no grant %s", v.GrantID)
 		}
 		g := gr.Grant
-		if v.By != g.From && v.By != g.To {
-			return errf(403, "not_participant", "only a grant participant can revoke it")
-		}
-		ar, err := getAgent(st.tx, v.By)
-		if err != nil {
-			return err
-		}
-		if ar == nil {
-			return errf(404, "unknown_agent", "agent %s is not registered", v.By)
-		}
-		key := ar.Cert.SignPub[:]
-		if v.Role == wire.RoleOwner {
-			key = ar.Cert.OwnerPub[:]
-		}
-		if !v.VerifySig(key) {
-			return errf(401, "invalid_signature", "revoke signature does not verify")
+		if signer != nil {
+			if err := currentKey(st, v.By, signer); err != nil {
+				return err
+			}
 		}
 		if gr.Status == statusRevoked {
 			res.LedgerIdx, res.Duplicate = gr.LedgerIdx, true
@@ -1407,7 +1540,9 @@ func (r *Relay) maybeSweep(ctx context.Context) {
 	if now-last < r.cfg.SweepEvery.Milliseconds() || !r.lastSweep.CompareAndSwap(last, now) {
 		return
 	}
-	go r.Sweep(context.WithoutCancel(ctx), 500)
+	// Synchronous and small: a serverless instance may be frozen after it
+	// responds, and a background sweep must never hold the writer lock then.
+	r.Sweep(context.WithoutCancel(ctx), 100)
 }
 
 // Sweep expires up to limit intros and messages whose deadlines passed.
@@ -1477,12 +1612,15 @@ func (r *Relay) Sweep(ctx context.Context, limit int) (int, error) {
 // ---------------------------------------------------------------------------
 // Reads
 
+const maxInboxBytes = 1 << 20
+
 // Inbox returns up to limit events after cursor for agent.
 func (r *Relay) Inbox(ctx context.Context, agent wire.ID, after uint64, limit int) ([]*Event, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 500
+	if limit <= 0 || limit > 200 {
+		limit = 200
 	}
 	var out []*Event
+	bytesOut := 0
 	now := wire.Millis(r.now())
 	err := r.store.View(ctx, func(tx kv.Tx) error {
 		prefix := kv.Key(bEvent, agent[:])
@@ -1500,7 +1638,8 @@ func (r *Relay) Inbox(ctx context.Context, agent wire.ID, after uint64, limit in
 				}
 			}
 			out = append(out, ev)
-			return true
+			bytesOut += len(ev.Frame)
+			return bytesOut < maxInboxBytes // a response carries at most ~1 MiB of frames
 		})
 		if err != nil {
 			return err
@@ -1512,6 +1651,9 @@ func (r *Relay) Inbox(ctx context.Context, agent wire.ID, after uint64, limit in
 
 // WaitInbox long-polls for events after cursor, up to wait.
 func (r *Relay) WaitInbox(ctx context.Context, agent wire.ID, after uint64, limit int, wait time.Duration) ([]*Event, error) {
+	if wait > 0 && r.notify.waiting(agent) >= maxWaitersPerAgent {
+		return nil, errf(429, "too_many_waits", "this agent already has %d open long-polls", maxWaitersPerAgent)
+	}
 	deadline := time.Now().Add(wait)
 	attempt := 0
 	for {
@@ -1740,16 +1882,29 @@ func (r *Relay) Stats(ctx context.Context) (*Stats, error) {
 }
 
 // AuthCert returns the signing certificate for authenticating an agent's reads.
-func (r *Relay) AuthCert(ctx context.Context, id wire.ID) (*wire.Cert, error) {
-	c, err := r.cachedCert(ctx, id)
+// AuthKey returns the agent's current signing key for authenticating reads.
+// It reads the compact key record every time, so a rotation through any
+// relay instance takes effect immediately.
+func (r *Relay) AuthKey(ctx context.Context, id wire.ID) ([]byte, error) {
+	var k *agentKey
+	err := r.store.View(ctx, func(tx kv.Tx) error {
+		v, err := tx.Get(kv.Key(bAgentKey, id[:]))
+		if err != nil || v == nil {
+			return err
+		}
+		k, err = decodeAgentKey(v)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	if !certLive(c, wire.Millis(r.now())) {
-		r.certs.Delete(id)
-		return nil, errf(403, "agent_inactive", "certificate expired")
+	if k == nil {
+		return nil, errf(404, "unknown_agent", "agent %s is not registered", id)
 	}
-	return c, nil
+	if k.Status != statusActive || k.Expires <= wire.Millis(r.now()) {
+		return nil, errf(403, "agent_inactive", "agent is revoked or its certificate expired")
+	}
+	return k.SignPub[:], nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1833,6 +1988,14 @@ func (n *notifier) stopWatchLaterLocked() {
 	})
 }
 
+const maxWaitersPerAgent = 4
+
+func (n *notifier) waiting(id wire.ID) int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return len(n.waiters[id])
+}
+
 func (n *notifier) fire(id wire.ID) {
 	n.mu.Lock()
 	for ch := range n.waiters[id] {
@@ -1909,6 +2072,16 @@ func (r *Relay) submitRelease(ctx context.Context, frame []byte) (*Result, error
 		return nil, err
 	}
 	return res, nil
+}
+
+// VerifyRelease checks a stored release frame against the configured release keys.
+func (r *Relay) VerifyRelease(rel *wire.Release) bool {
+	for _, k := range r.cfg.ReleaseKeys {
+		if bytes.Equal(k, rel.Signer[:]) && rel.VerifySig() {
+			return true
+		}
+	}
+	return false
 }
 
 // ReleaseInfo is a published release with its ledger position.

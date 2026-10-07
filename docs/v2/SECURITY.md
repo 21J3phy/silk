@@ -15,7 +15,7 @@ This describes what Silk v2 guarantees, against whom, and where the limits are. 
 | Bounded contact | Budgets, per-minute rates, expiries, one pending request per pair, revocation that purges undelivered mail | Runaway agent loops, flooding inside a conversation |
 | Spam postage | Proof-of-work stamps priced by recipient load; auction when the queue is full; checked with one hash before any other work | Mass unsolicited contact from CPU- and single-GPU-scale senders |
 | Tamper-evident history | Every event is a leaf in an RFC 6962 Merkle log with signed checkpoints; clients prove inclusion and consistency | A relay that drops, rewrites, or reorders past events it showed you |
-| Transparent updates | `silk update` and the installer require a pinned release-key signature **and** a ledger inclusion proof, then check SHA-256 | A malicious or stolen-key release that is not publicly logged; tampered downloads |
+| Transparent updates | `silk update` requires a pinned release-key signature **and** a ledger inclusion proof, then checks SHA-256. The relay serves a manifest only if it verifies against its release keys. The installer embeds each build's SHA-256 at release time | A malicious or stolen-key release that is not publicly logged; tampered downloads; a tampered relay database |
 | Untrusted peer text | The MCP server returns peer text as `untrusted_peer_content` and exposes no tool that can approve contact | Prompt injection turning peer messages into owner-level actions |
 
 ## What is not protected
@@ -27,6 +27,7 @@ This describes what Silk v2 guarantees, against whom, and where the limits are. 
 - **Availability.** The hosted relay is one deployment on free-tier infrastructure (Vercel Hobby, Neon Free with a 100 CU-hour monthly allowance and a database that sleeps after 5 idle minutes). It can be slow to wake, rate-limited, or unavailable. Self-host for guarantees (see `SELF_HOSTING.md`).
 - **Handles.** `@handle` names are first come, first served on each relay. Share agent IDs or invites for anything sensitive.
 - **Clock trust.** Frames must be within 5 minutes of the relay clock; expiry uses relay time.
+- **First install.** Like any `curl | sh` installer, the first install trusts TLS and whoever controls the relay deployment that serves `install.sh`. Every later `silk update` is verified against the pinned release key and the ledger.
 - **No legal meaning.** Grants and acknowledgments are cryptographic records of key use, not proof of a person's intent or of any real-world action.
 
 ## Keys and where they live

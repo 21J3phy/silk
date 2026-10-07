@@ -8,7 +8,22 @@ version="${1:-$(git -C "$root" describe --tags --always --dirty 2>/dev/null || e
 rm -rf "$out"
 mkdir -p "$out/api"
 cp "$root/go.mod" "$root/go.sum" "$out/"
-cp "$root/deploy/vercel/vercel.json" "$root/deploy/vercel/install.sh" "$root/deploy/vercel/llms.txt" "$out/"
+cp "$root/deploy/vercel/vercel.json" "$root/deploy/vercel/llms.txt" "$out/"
+# install.sh carries the URL and SHA-256 of each build of the newest published
+# release (releases/<version>.json, written by `silk release-publish`).
+python3 - "$root" "$out/install.sh" <<'PY'
+import json, pathlib, re, sys
+root, dest = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+def key(p): return [int(x) for x in re.findall(r"\d+", p.stem)]
+manifests = sorted((root / "releases").glob("*.json"), key=key)
+if not manifests:
+    sys.exit("no published release in releases/; publish one before bundling")
+m = json.loads(manifests[-1].read_text())
+cases = "\n".join(f'    {plat}) url="{f["url"]}"; sum="{f["sha256"]}" ;;' for plat, f in sorted(m["files"].items()) if not plat.startswith("windows"))
+tmpl = (root / "deploy/vercel/install.sh").read_text()
+dest.write_text(tmpl.replace("__VERSION__", m["version"]).replace("__CASES__", cases))
+dest.chmod(0o755)
+PY
 mkdir -p "$out/benchmarks"
 python3 "$root/bench/make_report.py" >/dev/null && cp "$root/bench/report.html" "$out/benchmarks/index.html"
 

@@ -81,6 +81,9 @@ const (
 	MaxRate       = 600
 	MaxClockSkew  = 5 * time.Minute
 	MaxPoWBits    = 40
+	// MaxTime bounds every timestamp (Unix ms, year ~37,600) so lifetime
+	// arithmetic can never overflow.
+	MaxTime int64 = 1 << 50
 	MaxLabelLen   = 32
 	MaxHandleLen  = 32
 	MaxScopeLen   = 32
@@ -206,6 +209,9 @@ func Sign(priv ed25519.PrivateKey, domain string, body []byte) []byte {
 	return signWith(priv, domain, body)
 }
 
+// validTime reports whether a protocol timestamp is in the sane range (0, MaxTime).
+func validTime(ms int64) bool { return ms > 0 && ms < MaxTime }
+
 // Millis converts a time to protocol Unix milliseconds.
 func Millis(t time.Time) int64 { return t.UnixMilli() }
 
@@ -295,7 +301,7 @@ func DecodeCert(b []byte) (*Cert, error) {
 	if err := r.done(); err != nil {
 		return nil, err
 	}
-	if c.MinPoW > MaxPoWBits || c.Flags&^CertAcceptsIntros != 0 || c.Expires <= c.Created {
+	if c.MinPoW > MaxPoWBits || c.Flags&^CertAcceptsIntros != 0 || !validTime(c.Created) || !validTime(c.Expires) || c.Expires <= c.Created {
 		return nil, fmt.Errorf("%w: invalid cert policy or lifetime", ErrMalformed)
 	}
 	c.Raw = b
@@ -403,7 +409,7 @@ func DecodeIntro(b []byte) (*Intro, error) {
 		return nil, fmt.Errorf("%w: budget outside 1..%d", ErrMalformed, MaxBudget)
 	case in.GrantTTL == 0 || time.Duration(in.GrantTTL)*time.Second > MaxGrantTTL:
 		return nil, fmt.Errorf("%w: grant ttl out of range", ErrMalformed)
-	case in.Expires <= in.Created || time.Duration(in.Expires-in.Created)*time.Millisecond > MaxIntroTTL:
+	case !validTime(in.Created) || !validTime(in.Expires) || in.Expires <= in.Created || in.Expires-in.Created > MaxIntroTTL.Milliseconds():
 		return nil, fmt.Errorf("%w: intro lifetime out of range", ErrMalformed)
 	case in.PoWBits > MaxPoWBits:
 		return nil, fmt.Errorf("%w: pow bits out of range", ErrMalformed)
@@ -503,7 +509,7 @@ func DecodeGrant(b []byte) (*Grant, error) {
 		return nil, fmt.Errorf("%w: budget out of range", ErrMalformed)
 	case g.Rate == 0 || g.Rate > MaxRate:
 		return nil, fmt.Errorf("%w: rate out of range", ErrMalformed)
-	case g.Expires <= g.Created || time.Duration(g.Expires-g.Created)*time.Millisecond > MaxGrantTTL:
+	case !validTime(g.Created) || !validTime(g.Expires) || g.Expires <= g.Created || g.Expires-g.Created > MaxGrantTTL.Milliseconds():
 		return nil, fmt.Errorf("%w: grant lifetime out of range", ErrMalformed)
 	}
 	g.Raw = b
@@ -559,6 +565,9 @@ func DecodeDecline(b []byte) (*Decline, error) {
 	r.fixed(d.Sig[:])
 	if err := r.done(); err != nil {
 		return nil, err
+	}
+	if !validTime(d.Created) {
+		return nil, fmt.Errorf("%w: invalid time", ErrMalformed)
 	}
 	d.Raw = b
 	return d, nil
@@ -653,7 +662,7 @@ func DecodeMsg(b []byte) (*Msg, error) {
 	if err := r.done(); err != nil {
 		return nil, err
 	}
-	if m.TTL == 0 || time.Duration(m.TTL)*time.Second > MaxMsgTTL {
+	if m.TTL == 0 || time.Duration(m.TTL)*time.Second > MaxMsgTTL || !validTime(m.Created) {
 		return nil, fmt.Errorf("%w: message ttl out of range", ErrMalformed)
 	}
 	m.Raw = b
@@ -712,7 +721,7 @@ func DecodeAck(b []byte) (*Ack, error) {
 	if err := r.done(); err != nil {
 		return nil, err
 	}
-	if a.Outcome < AckReceived || a.Outcome > AckHandled {
+	if a.Outcome < AckReceived || a.Outcome > AckHandled || !validTime(a.Created) {
 		return nil, fmt.Errorf("%w: unknown ack outcome", ErrMalformed)
 	}
 	a.Raw = b
@@ -783,7 +792,7 @@ func DecodeRevoke(b []byte) (*Revoke, error) {
 	if err := r.done(); err != nil {
 		return nil, err
 	}
-	if v.Role > RoleOwner {
+	if v.Role > RoleOwner || !validTime(v.Created) {
 		return nil, fmt.Errorf("%w: unknown revoke role", ErrMalformed)
 	}
 	v.Raw = b
@@ -899,6 +908,9 @@ func DecodePolicy(b []byte) (*Policy, error) {
 	if err := r.done(); err != nil {
 		return nil, err
 	}
+	if !validTime(p.Created) {
+		return nil, fmt.Errorf("%w: invalid time", ErrMalformed)
+	}
 	p.Raw = b
 	return p, nil
 }
@@ -960,6 +972,9 @@ func DecodeTicket(b []byte) (*Ticket, error) {
 	r.fixed(t.Sig[:])
 	if err := r.done(); err != nil {
 		return nil, err
+	}
+	if !validTime(t.Expires) {
+		return nil, fmt.Errorf("%w: invalid time", ErrMalformed)
 	}
 	t.Raw = b
 	return t, nil
@@ -1044,6 +1059,9 @@ func DecodeRelease(b []byte) (*Release, error) {
 	r.fixed(rel.Sig[:])
 	if err := r.done(); err != nil {
 		return nil, err
+	}
+	if !validTime(rel.Created) {
+		return nil, fmt.Errorf("%w: invalid time", ErrMalformed)
 	}
 	rel.Raw = b
 	return rel, nil

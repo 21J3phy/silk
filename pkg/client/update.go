@@ -110,6 +110,18 @@ func (c *Client) CheckReleaseVersion(ctx context.Context, releaseKeys []ed25519.
 	if err != nil {
 		return nil, err
 	}
+	// The relay must not show this machine a different history than before.
+	if c.Home != "" {
+		cpPath := filepath.Join(c.Home, "checkpoint")
+		if prev, err := os.ReadFile(cpPath); err == nil {
+			if err := c.consistentWith(ctx, prev, cp); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := os.Stat(c.Home); err == nil {
+			writeFileAtomic(cpPath, raw, 0o600)
+		}
+	}
 	var p relay.Proof
 	if err := c.getJSON(ctx, fmt.Sprintf("/v2/ledger/proof?index=%d&size=%d", info.LedgerIdx, cp.Size), nil, &p); err != nil {
 		return nil, err
@@ -184,11 +196,17 @@ func (c *Client) ApplyUpdate(ctx context.Context, chk *UpdateCheck, exe string) 
 		return err
 	}
 	if runtime.GOOS == "windows" {
+		// A running .exe cannot be replaced, only renamed aside.
 		old := exe + ".old"
 		os.Remove(old)
 		if err := os.Rename(exe, old); err != nil {
 			return err
 		}
+		if err := os.Rename(tmp.Name(), exe); err != nil {
+			os.Rename(old, exe) // put the working binary back
+			return err
+		}
+		return nil
 	}
 	return os.Rename(tmp.Name(), exe)
 }
@@ -207,6 +225,33 @@ func VerifyBinary(chk *UpdateCheck, exe string) error {
 	sum := sha256.Sum256(data)
 	if int64(len(data)) != f.Size || hex.EncodeToString(sum[:]) != strings.ToLower(f.SHA256) {
 		return fmt.Errorf("this binary is NOT the published silk %s build for %s", chk.Latest, Platform())
+	}
+	return nil
+}
+
+// consistentWith proves cp extends the previously verified checkpoint prevRaw.
+func (c *Client) consistentWith(ctx context.Context, prevRaw []byte, cp *ledger.Checkpoint) error {
+	prev, err := ledger.OpenCheckpoint(prevRaw, c.Config.LedgerKey)
+	if err != nil {
+		return fmt.Errorf("previous checkpoint: %w", err)
+	}
+	switch {
+	case prev.Size > cp.Size:
+		return fmt.Errorf("%w (shrank from %d to %d)", ErrLedgerFork, prev.Size, cp.Size)
+	case prev.Size == cp.Size:
+		if prev.Root != cp.Root {
+			return fmt.Errorf("%w (two roots for size %d)", ErrLedgerFork, cp.Size)
+		}
+		return nil
+	case prev.Size == 0:
+		return nil
+	}
+	var p relay.Proof
+	if err := c.getJSON(ctx, fmt.Sprintf("/v2/ledger/consistency?old=%d&size=%d", prev.Size, cp.Size), nil, &p); err != nil {
+		return err
+	}
+	if err := ledger.VerifyConsistency(toTreeProof(p.Hashes), cp.Size, cp.Root, prev.Size, prev.Root); err != nil {
+		return fmt.Errorf("%w: %v", ErrLedgerFork, err)
 	}
 	return nil
 }
@@ -230,27 +275,5 @@ func (c *Client) Witness(ctx context.Context, prevRaw []byte) (*ledger.Checkpoin
 	if prevRaw == nil {
 		return cp, nil
 	}
-	prev, err := ledger.OpenCheckpoint(prevRaw, c.Config.LedgerKey)
-	if err != nil {
-		return nil, fmt.Errorf("previous checkpoint: %w", err)
-	}
-	switch {
-	case prev.Size > cp.Size:
-		return cp, fmt.Errorf("%w (shrank from %d to %d)", ErrLedgerFork, prev.Size, cp.Size)
-	case prev.Size == cp.Size:
-		if prev.Root != cp.Root {
-			return cp, fmt.Errorf("%w (two roots for size %d)", ErrLedgerFork, cp.Size)
-		}
-		return cp, nil
-	case prev.Size == 0:
-		return cp, nil
-	}
-	var p relay.Proof
-	if err := c.getJSON(ctx, fmt.Sprintf("/v2/ledger/consistency?old=%d&size=%d", prev.Size, cp.Size), nil, &p); err != nil {
-		return cp, err
-	}
-	if err := ledger.VerifyConsistency(toTreeProof(p.Hashes), cp.Size, cp.Root, prev.Size, prev.Root); err != nil {
-		return cp, fmt.Errorf("%w: %v", ErrLedgerFork, err)
-	}
-	return cp, nil
+	return cp, c.consistentWith(ctx, prevRaw, cp)
 }

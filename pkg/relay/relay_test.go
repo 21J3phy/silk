@@ -59,6 +59,9 @@ func newFixture(t *testing.T, cfg relay.Config) *fixture {
 	if cfg.IntroBaseBits == 0 {
 		cfg.IntroBaseBits = 4
 	}
+	if cfg.PolicyEvery == 0 {
+		cfg.PolicyEvery = time.Millisecond
+	}
 	clk := &clock{t: time.Now()}
 	return &fixture{t: t, r: relay.New(store, signer, cfg, clk.now), clk: clk, vkey: vkey, ctx: context.Background()}
 }

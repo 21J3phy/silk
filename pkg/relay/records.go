@@ -188,13 +188,14 @@ func decodeGrant(v []byte) (*grantRec, error) {
 	return r, nil
 }
 
-// grantCtr: status | used[2] | windowStart | windowCount[2]. Small and
-// updated per message; the immutable grant frame lives under bGrant.
+// grantCtr: status | used[2] | windowStart | windowCount[2] | pending[2].
+// Small and updated per message; the immutable grant frame lives under bGrant.
 type grantCtr struct {
 	Status   uint8
 	Used     [2]uint32
 	WinStart int64
 	WinCount [2]uint16
+	Pending  [2]uint32
 }
 
 func (c *grantCtr) encode() []byte {
@@ -205,6 +206,8 @@ func (c *grantCtr) encode() []byte {
 	e.i64(c.WinStart)
 	e.u16(c.WinCount[0])
 	e.u16(c.WinCount[1])
+	e.u32(c.Pending[0])
+	e.u32(c.Pending[1])
 	return e.b
 }
 
@@ -217,6 +220,9 @@ func decodeGrantCtr(v []byte) (*grantCtr, error) {
 	c.Status = d.u8()
 	c.Used[0], c.Used[1], c.WinStart = d.u32(), d.u32(), d.i64()
 	c.WinCount[0], c.WinCount[1] = d.u16(), d.u16()
+	if len(d.b) >= 8 { // records written before per-grant backlogs were tracked lack these
+		c.Pending[0], c.Pending[1] = d.u32(), d.u32()
+	}
 	if d.bad {
 		return nil, errCorrupt
 	}

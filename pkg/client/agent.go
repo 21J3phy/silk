@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -37,7 +36,7 @@ type Agent struct {
 var processLocks sync.Map // dir -> *sync.Mutex
 
 func (a *Agent) authHeader(method, pathQuery string) string {
-	return wire.SignAuth(a.ID, a.keys.sign, a.c.Now().UnixMilli(), method, pathQuery)
+	return wire.SignAuth(a.ID, a.keys.sign, a.c.Now().UnixMilli(), method, a.c.relayHost(), pathQuery)
 }
 
 func (c *Client) agentDir(label string) string { return filepath.Join(c.Home, "agents", label) }
@@ -198,7 +197,7 @@ func (c *Client) Init(ctx context.Context, o InitOptions) (*Agent, *relay.Result
 	if err != nil {
 		return nil, nil, err
 	}
-	keys := &agentKeys{serial: 1, sign: sign, kem: kem, prev: map[uint32]*seal.KEMKey{}}
+	keys := &agentKeys{serial: 1, sign: sign, kem: kem, prev: map[uint32]*seal.KEMKey{}, retired: map[uint32]int64{}}
 	now := c.Now()
 	cert := &wire.Cert{Label: o.Label, Handle: o.Handle, Serial: 1, Suite: wire.Suite1, KEMPub: kem.Public(),
 		Created: now.UnixMilli(), Expires: now.Add(o.Validity).UnixMilli(), MinPoW: o.MinPoW}
@@ -242,34 +241,59 @@ func (c *Client) Init(ctx context.Context, o InitOptions) (*Agent, *relay.Result
 // Rotate replaces the agent's signing and encryption keys (owner operation).
 // The previous encryption key is kept so pending contact requests still open.
 func (a *Agent) Rotate(ctx context.Context) (*relay.Result, error) {
-	owner, err := a.c.OwnerKey()
+	pendingPath := filepath.Join(a.dir, "rotate.pending.json")
+	var pend pendingRotation
+	if err := readJSON(pendingPath, &pend); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if pend.Cert == nil {
+		// Fresh rotation: generate and persist everything before telling the relay,
+		// so an ambiguous network failure can be resumed with the identical frame.
+		owner, err := a.c.OwnerKey()
+		if err != nil {
+			return nil, err
+		}
+		_, sign, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		kem, err := seal.NewKEMKey()
+		if err != nil {
+			return nil, err
+		}
+		cert := *a.Cert
+		cert.Serial++
+		cert.KEMPub = kem.Public()
+		cert.Created = a.c.Now().UnixMilli()
+		copy(cert.SignPub[:], sign.Public().(ed25519.PublicKey))
+		cert.Sign(owner, sign)
+		pend = pendingRotation{Cert: cert.Raw, SignSeed: sign.Seed(), KEM: kem.Bytes()}
+		if err := writeJSON(pendingPath, pend, 0o600); err != nil {
+			return nil, err
+		}
+	}
+	cert, err := wire.DecodeCert(pend.Cert)
 	if err != nil {
 		return nil, err
 	}
-	_, sign, err := ed25519.GenerateKey(rand.Reader)
+	sign := ed25519.NewKeyFromSeed(pend.SignSeed)
+	kem, err := seal.LoadKEMKey(pend.KEM)
 	if err != nil {
 		return nil, err
 	}
-	kem, err := seal.NewKEMKey()
-	if err != nil {
-		return nil, err
-	}
-	now := a.c.Now()
-	cert := *a.Cert
-	cert.Serial++
-	cert.KEMPub = kem.Public()
-	cert.Created = now.UnixMilli()
-	copy(cert.SignPub[:], sign.Public().(ed25519.PublicKey))
-	cert.Sign(owner, sign)
 	data, _, err := a.c.do(ctx, "POST", "/v2/agents", relay.EncodeRegistration(cert.Raw, 0, 0), nil)
 	if err != nil {
+		if retryable(err) {
+			return nil, fmt.Errorf("rotation not confirmed (%w); run `silk rotate` again to resume it", err)
+		}
+		os.Remove(pendingPath)
 		return nil, err
 	}
 	var res relay.Result
 	if err := jsonUnmarshal(data, &res); err != nil {
 		return nil, err
 	}
-	a.keys.prev[a.keys.serial] = a.keys.kem
+	a.keys.retire(a.keys.serial, a.keys.kem, a.c.Now().UnixMilli())
 	a.keys.serial, a.keys.sign, a.keys.kem = cert.Serial, sign, kem
 	if err := a.keys.save(filepath.Join(a.dir, "keys.json")); err != nil {
 		return nil, err
@@ -277,8 +301,15 @@ func (a *Agent) Rotate(ctx context.Context) (*relay.Result, error) {
 	if err := writeFileAtomic(filepath.Join(a.dir, "cert.bin"), cert.Raw, 0o600); err != nil {
 		return nil, err
 	}
-	a.Cert = &cert
+	os.Remove(pendingPath)
+	a.Cert = cert
 	return &res, nil
+}
+
+type pendingRotation struct {
+	Cert     []byte `json:"cert"`
+	SignSeed []byte `json:"sign_seed"`
+	KEM      []byte `json:"kem"`
 }
 
 // Lookup resolves and verifies a peer certificate. For IDs, the certificate
@@ -286,7 +317,7 @@ func (a *Agent) Rotate(ctx context.Context) (*relay.Result, error) {
 func (a *Agent) Lookup(ctx context.Context, ref string) (*relay.AgentInfo, *wire.Cert, error) {
 	var info relay.AgentInfo
 	path := "/v2/agents/" + url.PathEscape(ref) + "?from=" + a.ID.String()
-	if err := a.c.getJSON(ctx, path, nil, &info); err != nil {
+	if err := a.c.getJSON(ctx, path, a, &info); err != nil {
 		return nil, nil, err
 	}
 	cert, err := wire.DecodeCert(info.Cert)
@@ -299,13 +330,49 @@ func (a *Agent) Lookup(ctx context.Context, ref string) (*relay.AgentInfo, *wire
 	if cert.ID().String() != info.ID {
 		return nil, nil, errors.New("relay returned a certificate for a different agent")
 	}
-	if id, err := wire.ParseID(ref); err == nil && id != cert.ID() {
-		return nil, nil, errors.New("relay returned a certificate that does not match the requested address")
+	if id, err := wire.ParseID(ref); err == nil {
+		if id != cert.ID() {
+			return nil, nil, errors.New("relay returned a certificate that does not match the requested address")
+		}
+	} else if h := strings.TrimPrefix(ref, "@"); cert.Handle != h {
+		return nil, nil, fmt.Errorf("relay returned an agent whose certificate does not claim @%s", h)
 	}
 	if cert.Expires <= a.c.Now().UnixMilli() {
 		return nil, nil, errors.New("peer certificate expired")
 	}
 	return &info, cert, nil
+}
+
+// resolvePeer looks up a peer for a trust-sensitive operation: it pins
+// @handle -> agent ID on first use (a later remapping is refused) and proves
+// the certificate is recorded in the relay's ledger.
+func (a *Agent) resolvePeer(ctx context.Context, ref string) (*relay.AgentInfo, *wire.Cert, error) {
+	info, cert, err := a.Lookup(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, perr := wire.ParseID(ref); perr != nil {
+		h := strings.TrimPrefix(ref, "@")
+		var pinned string
+		if err := a.withState(func(st *agentState) error {
+			if st.Handles == nil {
+				st.Handles = map[string]string{}
+			}
+			if pinned = st.Handles[h]; pinned == "" {
+				st.Handles[h] = cert.ID().String()
+			}
+			return nil
+		}); err != nil {
+			return nil, nil, err
+		}
+		if pinned != "" && pinned != cert.ID().String() {
+			return nil, nil, fmt.Errorf("@%s now resolves to %s, not the agent %s you used before; confirm with its owner, then remove it from %s", h, cert.ID(), pinned, filepath.Join(a.dir, "state.json"))
+		}
+	}
+	if err := a.VerifyFrame(ctx, cert.Raw, info.LedgerIdx, wire.KindCert); err != nil {
+		return nil, nil, fmt.Errorf("peer certificate is not provably on the ledger: %w", err)
+	}
+	return info, cert, nil
 }
 
 func (a *Agent) peerCert(ctx context.Context, id wire.ID, st *agentState) (*wire.Cert, error) {
@@ -363,7 +430,11 @@ func (a *Agent) RequestContact(ctx context.Context, ref string, o IntroOptions) 
 	var out *OutIntro
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		info, cert, err := a.Lookup(ctx, ref)
+		lookup := a.resolvePeer
+		if attempt > 0 {
+			lookup = a.Lookup // already pinned and proven on the first attempt
+		}
+		info, cert, err := lookup(ctx, ref)
 		if err != nil {
 			return nil, err
 		}
@@ -402,7 +473,7 @@ func (a *Agent) RequestContact(ctx context.Context, ref string, o IntroOptions) 
 		hash := wire.Hash(in.Raw)
 		out = &OutIntro{ID: in.IntroID.String(), To: cert.ID().String(), ToHandle: cert.Handle, Scope: o.Scope, Note: o.Note,
 			EphKEM: eph.Bytes(), K1: k1, IntroHash: hash[:], ExpiresMs: in.Expires, Status: "pending",
-			PoWBits: in.PoWBits, PoWMs: time.Since(start).Milliseconds()}
+			PoWBits: in.PoWBits, PoWMs: time.Since(start).Milliseconds(), Budget: in.Budget, GrantTTL: in.GrantTTL, Frame: in.Raw}
 		// Persist the ephemeral secret before sending so a crash cannot strand the grant.
 		if err := a.withState(func(st *agentState) error {
 			st.OutIntros[out.ID] = out
@@ -413,15 +484,25 @@ func (a *Agent) RequestContact(ctx context.Context, ref string, o IntroOptions) 
 		}
 		res, err := a.c.Submit(ctx, in.Raw)
 		if err == nil {
-			out.LedgerIdx = res.LedgerIdx
+			out.LedgerIdx, out.Frame = res.LedgerIdx, nil
 			return out, a.withState(func(st *agentState) error {
 				if o := st.OutIntros[out.ID]; o != nil {
-					o.LedgerIdx = res.LedgerIdx
+					o.LedgerIdx, o.Frame = res.LedgerIdx, nil
 				}
 				return nil
 			})
 		}
 		lastErr = err
+		if retryable(err) {
+			// Outcome unknown: keep the request (and its secrets) and resend the identical frame later.
+			a.withState(func(st *agentState) error {
+				if o := st.OutIntros[out.ID]; o != nil {
+					o.Status = "queued"
+				}
+				return nil
+			})
+			return out, fmt.Errorf("request queued, will retry: %w", err)
+		}
 		a.withState(func(st *agentState) error { delete(st.OutIntros, out.ID); return nil })
 		switch Code(err) {
 		case "pow_required", "stale_recipient_key", "outbid":
@@ -443,17 +524,23 @@ type AcceptOptions struct {
 	Rate     uint16
 }
 
-// Accept grants a pending contact request (owner operation).
+// Accept grants a pending contact request (owner operation). The grant and
+// its session are saved before the relay is told, so an ambiguous network
+// failure can be resumed by calling Accept again (the identical frame is resent).
 func (a *Agent) Accept(ctx context.Context, introID string, o AcceptOptions) (*GrantInfo, error) {
-	owner, err := a.c.OwnerKey()
-	if err != nil {
-		return nil, err
-	}
-	var gi *GrantInfo
-	err = a.withState(func(st *agentState) error {
+	var frame []byte
+	err := a.withState(func(st *agentState) error {
 		ii := st.InIntros[introID]
+		if ii != nil && ii.Status == "accepting" && ii.GrantFrame != nil {
+			frame = ii.GrantFrame // resume
+			return nil
+		}
 		if ii == nil || ii.Status != "pending" {
 			return fmt.Errorf("no pending contact request %s", introID)
+		}
+		owner, err := a.c.OwnerKey()
+		if err != nil {
+			return err
 		}
 		in, err := wire.DecodeIntro(ii.Frame)
 		if err != nil {
@@ -468,17 +555,15 @@ func (a *Agent) Accept(ctx context.Context, introID string, o AcceptOptions) (*G
 			return err
 		}
 		now := a.c.Now()
-		ttl := o.TTL
-		if ttl == 0 {
-			ttl = time.Duration(in.GrantTTL) * time.Second
+		// The relay rejects terms beyond what was requested; clamp to them.
+		ttl := time.Duration(in.GrantTTL) * time.Second
+		if o.TTL > 0 && o.TTL < ttl {
+			ttl = o.TTL
 		}
-		if ttl > wire.MaxGrantTTL-time.Hour {
-			ttl = wire.MaxGrantTTL - time.Hour
-		}
-		if o.FromPeer == 0 {
+		if o.FromPeer == 0 || o.FromPeer > in.Budget {
 			o.FromPeer = in.Budget
 		}
-		if o.ToPeer == 0 {
+		if o.ToPeer == 0 || o.ToPeer > in.Budget {
 			o.ToPeer = in.Budget
 		}
 		if o.Rate == 0 {
@@ -500,19 +585,43 @@ func (a *Agent) Accept(ctx context.Context, introID string, o AcceptOptions) (*G
 		if err != nil {
 			return err
 		}
-		res, err := a.c.Submit(ctx, g.Raw)
-		if err != nil {
-			return err
-		}
 		st.Sessions[ii.ID] = sess
-		gi = &GrantInfo{ID: ii.ID, Peer: ii.From, PeerHandle: ii.FromHandle, Scope: ii.Scope, SendBudget: g.BudgetBA, RecvBudget: g.BudgetAB,
-			Rate: g.Rate, ExpiresMs: g.Expires, Status: "active", LedgerIdx: res.LedgerIdx}
-		st.Grants[ii.ID] = gi
-		ii.Status = "accepted"
-		ii.Frame = nil
+		st.Grants[ii.ID] = &GrantInfo{ID: ii.ID, Peer: ii.From, PeerHandle: ii.FromHandle, Scope: ii.Scope, SendBudget: g.BudgetBA,
+			RecvBudget: g.BudgetAB, Rate: g.Rate, ExpiresMs: g.Expires, Status: "pending"}
+		ii.Status, ii.GrantFrame = "accepting", g.Raw
+		frame = g.Raw
 		return nil
 	})
-	return gi, err
+	if err != nil {
+		return nil, err
+	}
+	res, err := a.c.Submit(ctx, frame)
+	if err != nil && retryable(err) {
+		return nil, fmt.Errorf("approval not confirmed (%w); run accept again to resend it", err)
+	}
+	var gi *GrantInfo
+	serr := a.withState(func(st *agentState) error {
+		ii := st.InIntros[introID]
+		if ii == nil {
+			return nil
+		}
+		if err != nil { // rejected: undo the local session
+			delete(st.Sessions, introID)
+			delete(st.Grants, introID)
+			ii.Status, ii.GrantFrame = "pending", nil
+			return nil
+		}
+		gi = st.Grants[introID]
+		if gi != nil {
+			gi.Status, gi.LedgerIdx = "active", res.LedgerIdx
+		}
+		ii.Status, ii.Frame, ii.GrantFrame = "accepted", nil, nil
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return gi, serr
 }
 
 // Decline refuses a pending contact request (owner operation). Declines raise the sender's future PoW cost.
@@ -588,7 +697,14 @@ func (a *Agent) Sync(ctx context.Context, wait time.Duration) (*SyncResult, erro
 			continue
 		}
 		if _, ok := certs[peer]; !ok && !peer.IsZero() {
-			if c, err := a.peerCert(ctx, peer, st0); err == nil {
+			var c *wire.Cert
+			var err error
+			if ev.Kind == wire.KindIntro {
+				_, c, err = a.Lookup(ctx, peer.String()) // fresh: the sender may have rotated keys
+			} else {
+				c, err = a.peerCert(ctx, peer, st0) // owner keys never change for an address
+			}
+			if err == nil {
 				certs[peer] = c
 			}
 		}
@@ -652,8 +768,12 @@ func (a *Agent) apply(st *agentState, ev *relay.Event, certs map[wire.ID]*wire.C
 			return
 		}
 		c := certs[g.To]
-		if c == nil || !g.VerifySig() || c.OwnerPub != g.OwnerPub || hex.EncodeToString(g.IntroHash[:]) != hex.EncodeToString(out.IntroHash) {
+		if c == nil || !g.VerifySig() || c.OwnerPub != g.OwnerPub || hex.EncodeToString(g.IntroHash[:]) != hex.EncodeToString(out.IntroHash) || g.To.String() != out.To {
 			out.Status = "rejected: grant failed verification"
+			return
+		}
+		if out.Budget > 0 && (g.BudgetAB > out.Budget || g.BudgetBA > out.Budget || g.Expires-g.Created > int64(out.GrantTTL)*1000) {
+			out.Status = "rejected: grant exceeds the requested terms"
 			return
 		}
 		eph, err := seal.LoadKEMKey(out.EphKEM)
@@ -840,7 +960,8 @@ func (a *Agent) Send(ctx context.Context, to, body string, o SendOptions) (*Sent
 		if len(preview) > 80 {
 			preview = preview[:80]
 		}
-		sent = &Sent{ID: m.ID().String(), Grant: gi.ID, To: gi.Peer, Seq: m.Seq, SentMs: m.Created, Frame: m.Raw, Status: "queued", Preview: preview}
+		fh := wire.Hash(m.Raw)
+		sent = &Sent{ID: m.ID().String(), Grant: gi.ID, To: gi.Peer, Seq: m.Seq, SentMs: m.Created, Frame: m.Raw, Status: "queued", Preview: preview, Hash: fh[:]}
 		st.Sent = append(st.Sent, sent)
 		// Replying implies the original was handled: acknowledge it in the same request.
 		if m.ReplyTo != nil && !o.KeepUnacked {
@@ -860,9 +981,14 @@ func (a *Agent) Send(ctx context.Context, to, body string, o SendOptions) (*Sent
 	if ackFrame != nil {
 		items, berr := a.c.SubmitBatch(ctx, [][]byte{ackFrame, sent.Frame})
 		err = berr
-		if berr == nil && len(items) == 2 {
+		if berr == nil && len(items) != 2 {
+			err = fmt.Errorf("relay returned %d results for 2 frames", len(items))
+		}
+		if err == nil {
 			if it := items[1]; it.Error != nil {
 				err = &RelayError{Status: it.Error.Status, Code: it.Error.Code, Message: it.Error.Message}
+			} else if it.Result == nil {
+				err = errors.New("relay returned an empty result")
 			} else {
 				res = it.Result
 			}
@@ -908,6 +1034,25 @@ func (a *Agent) Flush(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	for _, o := range st.OutIntros {
+		if o.Status == "queued" && o.Frame != nil {
+			res, err := a.c.Submit(ctx, o.Frame)
+			if err != nil && retryable(err) {
+				continue
+			}
+			id := o.ID
+			a.withState(func(st *agentState) error {
+				if q := st.OutIntros[id]; q != nil && q.Status == "queued" {
+					if err != nil {
+						q.Status, q.Frame, q.EphKEM, q.K1 = "failed: "+Code(err), nil, nil, nil
+					} else {
+						q.Status, q.Frame, q.LedgerIdx = "pending", nil, res.LedgerIdx
+					}
+				}
+				return nil
+			})
+		}
+	}
 	var frames [][]byte
 	var ids []string
 	for _, s := range st.Sent {
@@ -922,6 +1067,9 @@ func (a *Agent) Flush(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if len(items) != len(frames) {
+		return 0, fmt.Errorf("relay returned %d results for %d frames", len(items), len(frames))
+	}
 	n := 0
 	err = a.withState(func(st *agentState) error {
 		byID := map[string]*Sent{}
@@ -934,6 +1082,8 @@ func (a *Agent) Flush(ctx context.Context) (int, error) {
 				continue
 			}
 			switch {
+			case i >= len(ids):
+				continue
 			case it.Error == nil && it.Result != nil:
 				s.Status, s.LedgerIdx, s.Frame = "accepted", it.Result.LedgerIdx, nil
 				n++
@@ -1114,42 +1264,47 @@ func (a *Agent) Audit(ctx context.Context) (*AuditResult, error) {
 	if err != nil {
 		return res, err
 	}
-	type item struct {
-		idx   int64
-		frame []byte
-	}
-	var items []item
-	for i := len(st.Sent) - 1; i >= 0 && len(items) < 5; i-- {
-		if s := st.Sent[i]; s.LedgerIdx > 0 && s.LedgerIdx < cp.Size {
-			items = append(items, item{idx: s.LedgerIdx})
+	checked := 0
+	for i := len(st.Sent) - 1; i >= 0 && checked < 5; i-- {
+		s := st.Sent[i]
+		if s.LedgerIdx <= 0 || s.LedgerIdx >= cp.Size || len(s.Hash) != 32 {
+			continue
 		}
-	}
-	for _, it := range items {
-		if err := a.verifyIndex(ctx, cp, it.idx, nil); err != nil {
+		var h [32]byte
+		copy(h[:], s.Hash)
+		if err := a.verifyCommitment(ctx, cp, s.LedgerIdx, h, wire.KindMsg); err != nil {
 			return res, err
 		}
-		res.Checked++
+		checked++
 	}
+	if a.Cert != nil {
+		if info, _, err := a.Lookup(ctx, a.ID.String()); err == nil && info.LedgerIdx < cp.Size {
+			if err := a.verifyCommitment(ctx, cp, info.LedgerIdx, wire.Hash(a.Cert.Raw), wire.KindCert); err != nil {
+				return res, fmt.Errorf("this agent's own certificate: %w", err)
+			}
+			checked++
+		}
+	}
+	res.Checked = checked
 	if err := writeFileAtomic(cpPath, raw, 0o600); err != nil {
 		return res, err
 	}
 	return res, nil
 }
 
-// verifyIndex proves leaf idx is in checkpoint cp (and matches frame if given).
-func (a *Agent) verifyIndex(ctx context.Context, cp *ledger.Checkpoint, idx int64, frame []byte) error {
+// verifyCommitment proves that leaf idx in checkpoint cp records a frame of
+// the given kind whose SHA-256 is commitment.
+func (a *Agent) verifyCommitment(ctx context.Context, cp *ledger.Checkpoint, idx int64, commitment [32]byte, kind wire.Kind) error {
 	var p relay.Proof
 	if err := a.c.getJSON(ctx, "/v2/ledger/proof?index="+strconv.FormatInt(idx, 10)+"&size="+strconv.FormatInt(cp.Size, 10), nil, &p); err != nil {
 		return err
 	}
-	if frame != nil {
-		leaf, err := ledger.ParseLeaf(p.Leaf)
-		if err != nil {
-			return err
-		}
-		if leaf.Commitment != sha256.Sum256(frame) {
-			return fmt.Errorf("ledger leaf %d does not commit to this frame", idx)
-		}
+	leaf, err := ledger.ParseLeaf(p.Leaf)
+	if err != nil {
+		return err
+	}
+	if leaf.Commitment != commitment || leaf.Kind != kind {
+		return fmt.Errorf("ledger leaf %d does not record this %s", idx, kind)
 	}
 	if err := ledger.VerifyInclusion(toRecordProof(p.Hashes), cp.Size, cp.Root, idx, p.Leaf); err != nil {
 		return fmt.Errorf("inclusion proof for leaf %d failed: %w", idx, err)
@@ -1157,8 +1312,9 @@ func (a *Agent) verifyIndex(ctx context.Context, cp *ledger.Checkpoint, idx int6
 	return nil
 }
 
-// VerifyFrame proves that a frame is recorded in the ledger at idx under the current verified checkpoint.
-func (a *Agent) VerifyFrame(ctx context.Context, frame []byte, idx int64) error {
+// VerifyFrame proves that a frame of the given kind is recorded in the ledger
+// at idx under the current checkpoint (verified with the pinned key).
+func (a *Agent) VerifyFrame(ctx context.Context, frame []byte, idx int64, kind wire.Kind) error {
 	raw, _, err := a.c.do(ctx, "GET", "/v2/ledger/checkpoint", nil, nil)
 	if err != nil {
 		return err
@@ -1167,5 +1323,8 @@ func (a *Agent) VerifyFrame(ctx context.Context, frame []byte, idx int64) error 
 	if err != nil {
 		return err
 	}
-	return a.verifyIndex(ctx, cp, idx, frame)
+	if idx < 0 || idx >= cp.Size {
+		return fmt.Errorf("ledger index %d is outside the checkpoint (size %d)", idx, cp.Size)
+	}
+	return a.verifyCommitment(ctx, cp, idx, wire.Hash(frame), kind)
 }

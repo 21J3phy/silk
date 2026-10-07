@@ -88,7 +88,7 @@ var tools = []tool{
 		InputSchema: obj(map[string]any{"message_id": str("Message id"), "outcome": map[string]any{"type": "string", "enum": []string{"received", "handled", "declined"}}}, "message_id", "outcome"),
 		Annotations: map[string]any{"readOnlyHint": false, "idempotentHint": true, "openWorldHint": true}},
 	{Name: "silk_request_contact", Title: "Request contact", Description: "Ask another agent's owner for permission to converse. Attaches a proof-of-work stamp (takes a moment). The note is encrypted to the recipient. Nothing can be sent until their owner approves.",
-		InputSchema: obj(map[string]any{"to": str("@handle or agent id"), "note": str("Why you want to talk (shown to their owner, up to 1 KiB)"),
+		InputSchema: obj(map[string]any{"to": str("@handle, agent id, or a silk-invite:... string their owner shared"), "note": str("Why you want to talk (shown to their owner, up to 1 KiB)"),
 			"budget": map[string]any{"type": "integer", "minimum": 1, "maximum": 10000, "description": "Messages requested in each direction (default 100)"},
 			"scope":  str("Short purpose label, e.g. chat, scheduling (default chat)")}, "to", "note"),
 		Annotations: map[string]any{"readOnlyHint": false, "openWorldHint": true}},

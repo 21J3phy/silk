@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -27,6 +28,7 @@ const (
 	KindPolicy  Kind = 8
 	// KindEvicted is a relay notice (no frame): a pending contact request was outbid.
 	KindEvicted Kind = 9
+	KindTicket  Kind = 10
 )
 
 func (k Kind) String() string {
@@ -49,6 +51,8 @@ func (k Kind) String() string {
 		return "policy"
 	case KindEvicted:
 		return "evicted"
+	case KindTicket:
+		return "ticket"
 	}
 	return fmt.Sprintf("kind(%d)", uint8(k))
 }
@@ -91,6 +95,7 @@ const (
 	DomainAck       = "silk/v2/ack"
 	DomainRevoke    = "silk/v2/revoke"
 	DomainPolicy    = "silk/v2/policy"
+	DomainTicket    = "silk/v2/ticket"
 	DomainAuth      = "silk/v2/auth"
 )
 
@@ -309,6 +314,7 @@ type Intro struct {
 	Enc      []byte // HPKE encapsulation to the recipient's static key
 	Note     []byte // HPKE-sealed purpose text, readable only by the recipient
 	EphPub   []byte // initiator's ephemeral HPKE public key (forward secrecy)
+	Ticket   []byte // optional invite ticket from the recipient's owner (skips postage)
 	PoWBits  uint8
 	PoWNonce uint64
 	Sig      [SigLen]byte
@@ -338,6 +344,7 @@ func (in *Intro) PoWPrefix() []byte {
 	w.bytes16(in.Enc)
 	w.bytes16(in.Note)
 	w.bytes16(in.EphPub)
+	w.bytes16(in.Ticket)
 	return w.b
 }
 
@@ -378,6 +385,7 @@ func DecodeIntro(b []byte) (*Intro, error) {
 	in.Enc = r.bytes16(KEMEncLen, KEMEncLen, "enc")
 	in.Note = r.bytes16(AEADTagLen, MaxNote+AEADTagLen, "note")
 	in.EphPub = r.bytes16(KEMPublicLen, KEMPublicLen, "ephemeral key")
+	in.Ticket = r.bytes16(0, MaxTicket, "ticket")
 	in.PoWBits = r.u8()
 	in.PoWNonce = r.u64()
 	r.fixed(in.Sig[:])
@@ -889,4 +897,79 @@ func DecodePolicy(b []byte) (*Policy, error) {
 	}
 	p.Raw = b
 	return p, nil
+}
+
+// ---------------------------------------------------------------------------
+// Ticket: a single-use invite signed by an agent's owner. An intro that
+// carries a valid unused ticket for its recipient is trusted: no postage, no
+// stranger queue. Owners hand tickets out like invite links.
+
+const (
+	MaxTicket    = 256
+	TicketPrefix = "silk-invite:"
+	MaxTicketTTL = 90 * 24 * time.Hour
+)
+
+type Ticket struct {
+	Recipient ID
+	TicketID  ID
+	Expires   int64
+	OwnerPub  [PubLen]byte
+	Sig       [SigLen]byte
+	Raw       []byte
+}
+
+func (t *Ticket) body() []byte {
+	w := writer{b: make([]byte, 0, 80)}
+	w.u8(Version)
+	w.u8(uint8(KindTicket))
+	w.raw(t.Recipient[:])
+	w.raw(t.TicketID[:])
+	w.i64(t.Expires)
+	w.raw(t.OwnerPub[:])
+	return w.b
+}
+
+func (t *Ticket) Sign(owner ed25519.PrivateKey) []byte {
+	copy(t.OwnerPub[:], owner.Public().(ed25519.PublicKey))
+	body := t.body()
+	copy(t.Sig[:], signWith(owner, DomainTicket, body))
+	t.Raw = append(body, t.Sig[:]...)
+	return t.Raw
+}
+
+func (t *Ticket) VerifySig() bool {
+	return Verify(t.OwnerPub[:], DomainTicket, t.Raw[:len(t.Raw)-SigLen], t.Sig[:])
+}
+
+// String renders the ticket as a shareable invite.
+func (t *Ticket) String() string { return TicketPrefix + base64.RawURLEncoding.EncodeToString(t.Raw) }
+
+func DecodeTicket(b []byte) (*Ticket, error) {
+	r := reader{b: b}
+	t := &Ticket{}
+	r.header(KindTicket)
+	r.fixed(t.Recipient[:])
+	r.fixed(t.TicketID[:])
+	t.Expires = r.i64()
+	r.fixed(t.OwnerPub[:])
+	r.fixed(t.Sig[:])
+	if err := r.done(); err != nil {
+		return nil, err
+	}
+	t.Raw = b
+	return t, nil
+}
+
+// ParseInvite decodes a "silk-invite:..." string.
+func ParseInvite(s string) (*Ticket, error) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, TicketPrefix) {
+		return nil, fmt.Errorf("not a silk invite")
+	}
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(s[len(TicketPrefix):])
+	if err != nil {
+		return nil, fmt.Errorf("invite encoding: %w", err)
+	}
+	return DecodeTicket(raw)
 }

@@ -46,7 +46,8 @@ Identity
   silk rotate                                   rotate agent keys (owner)
 
 Consent
-  silk request <@handle|id> --note "why"        ask to start a conversation (proof-of-work stamped)
+  silk request <@handle|id|invite> --note "why" ask to start a conversation (proof-of-work stamped)
+  silk invite [--days 7]                        create a single-use invite (no postage) to share (owner)
   silk requests                                 list contact requests (incoming and sent)
   silk accept <request-id> [--in N --out N --days D --rate R]   approve (owner)
   silk decline <request-id>                     refuse (owner); raises the sender's future cost
@@ -278,6 +279,25 @@ func run(ctx context.Context, cmd string, args []string) error {
 		out(g, o, func(w io.Writer) {
 			fmt.Fprintf(w, "Contact request %s sent to %s (%d-bit stamp in %dms, ledger #%d).\nTheir owner must approve it; run `silk inbox` to see when they do.\n",
 				o.ID, peerName(o.To, o.ToHandle), o.PoWBits, o.PoWMs, o.LedgerIdx)
+		})
+		return nil
+
+	case "invite":
+		fs := newFlags("invite", g)
+		days := fs.Int("days", 7, "invite lifetime in days (max 90)")
+		if _, err := parse(fs, args); err != nil {
+			return err
+		}
+		a, err := openAgent(g)
+		if err != nil {
+			return err
+		}
+		inv, err := a.CreateInvite(time.Duration(*days) * 24 * time.Hour)
+		if err != nil {
+			return err
+		}
+		out(g, map[string]any{"invite": inv, "agent": a.Address()}, func(w io.Writer) {
+			fmt.Fprintf(w, "%s\n\nShare this once. The holder can request a conversation with %s without proof-of-work;\nyou still approve it. Valid %d days, single use.\n", inv, a.Address(), *days)
 		})
 		return nil
 

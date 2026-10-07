@@ -31,6 +31,7 @@ const (
 	bPolicy      = 'Y' // agentID -> owner-signed contact policy frame
 	bQueue       = 'q' // recipient||bits||created||introID -> nil (stranger queue, cheapest first)
 	bTrustedPend = 't' // recipient -> pending trusted intros (u32)
+	bTicketUsed  = 'T' // ticketID -> introID (single-use invite redemption)
 	bStat        = 's' // name -> u64
 )
 

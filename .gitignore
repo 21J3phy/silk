@@ -21,3 +21,4 @@ tests/browser-artifacts/
 /silk
 /silk-bench
 /dist/
+.vercel/

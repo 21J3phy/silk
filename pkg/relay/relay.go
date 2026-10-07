@@ -517,60 +517,53 @@ func (rep *reputation) score(now int64) float64 {
 	return float64(rep.Milli) / 1000 * math.Pow(0.5, age/float64(halfLifeMs))
 }
 
-// strangerPrice is the PoW a non-trusted sender must attach right now:
-// base (max of relay base and recipient's own minimum) + surge (doubling cost
-// as the recipient's queue fills) + penalty (for senders whose intros were declined).
-func (r *Relay) strangerPrice(tx kv.Tx, sender, recipient wire.ID, rc *wire.Cert, now int64) (uint8, error) {
-	pv, err := tx.Get(kv.Key(bRecipient, recipient[:]))
-	if err != nil {
-		return 0, err
-	}
-	p := decodePressure(pv)
+// introBits is the stamp a specific sender needs right now: 0 if trusted;
+// otherwise the stranger price (base + surge + penalty) while the stranger
+// queue has room, and an auction once it is full: one bit more than the
+// cheapest pending request (plus penalty), which that request is evicted for.
+func (r *Relay) introBits(tx kv.Tx, sender, recipient wire.ID, rc *wire.Cert, now int64) (uint8, error) {
 	var rep float64
 	if !sender.IsZero() {
+		ar, err := getAgent(tx, sender)
+		if err != nil {
+			return 0, err
+		}
+		if ar != nil {
+			ok, err := trusts(tx, recipient, rc, sender, ar.Cert)
+			if err != nil {
+				return 0, err
+			}
+			if ok {
+				return 0, nil
+			}
+		}
 		rv, err := tx.Get(kv.Key(bReputation, sender[:]))
 		if err != nil {
 			return 0, err
 		}
 		rep = decodeReputation(rv).score(now)
 	}
-	return IntroPrice(r.cfg, rc.MinPoW, float64(p.Pending)+p.recent(now), rep), nil
-}
-
-// introBits is the stamp a specific sender needs right now: 0 if trusted,
-// otherwise the stranger price, raised to outbid the cheapest pending request
-// when the stranger queue is full.
-func (r *Relay) introBits(tx kv.Tx, sender, recipient wire.ID, rc *wire.Cert, now int64) (uint8, error) {
-	if !sender.IsZero() {
-		if v, err := tx.Get(kv.Key(bAgentKey, sender[:])); err == nil && v != nil {
-			if ar, err := getAgent(tx, sender); err == nil && ar != nil {
-				ok, err := trusts(tx, recipient, rc, sender, ar.Cert)
-				if err != nil {
-					return 0, err
-				}
-				if ok {
-					return 0, nil
-				}
-			}
-		}
-	}
-	price, err := r.strangerPrice(tx, sender, recipient, rc, now)
-	if err != nil {
-		return 0, err
-	}
 	pv, err := tx.Get(kv.Key(bRecipient, recipient[:]))
 	if err != nil {
 		return 0, err
 	}
-	if decodePressure(pv).Pending >= r.cfg.MaxPendingPerRecipient {
-		if _, minBits, err := cheapestPending(tx, recipient); err == nil && minBits+1 > price {
-			price = minBits + 1
-		}
+	p := decodePressure(pv)
+	if p.Pending < r.cfg.MaxPendingPerRecipient {
+		return IntroPrice(r.cfg, rc.MinPoW, float64(p.Pending)+p.recent(now), rep), nil
 	}
-	if price > wire.MaxPoWBits {
-		price = wire.MaxPoWBits
+	_, minBits, err := cheapestPending(tx, recipient)
+	if err != nil {
+		return 0, err
 	}
-	return price, nil
+	return AuctionPrice(r.cfg, rc.MinPoW, minBits, rep), nil
+}
+
+// AuctionPrice is the price when a recipient's stranger queue is full.
+func AuctionPrice(cfg Config, recipientMin, cheapestPending uint8, reputation float64) uint8 {
+	cfg.defaults()
+	bits := int(max(cfg.IntroBaseBits, recipientMin, cheapestPending+1))
+	bits += int(math.Min(2*math.Round(reputation), float64(cfg.MaxPenaltyBits)))
+	return uint8(min(bits, wire.MaxPoWBits))
 }
 
 // IntroPrice is the proof-of-work pricing rule for contact requests:
@@ -670,6 +663,23 @@ func (r *Relay) submitIntro(ctx context.Context, frame []byte) (*Result, error) 
 		if err != nil {
 			return err
 		}
+		var ticketKey []byte
+		if len(in.Ticket) > 0 {
+			tk, err := wire.DecodeTicket(in.Ticket)
+			if err != nil || !tk.VerifySig() || tk.Recipient != in.To || tk.OwnerPub != rc.Cert.OwnerPub {
+				return errf(403, "invalid_invite", "the invite is not a valid invite from this agent's owner")
+			}
+			if tk.Expires <= st.now {
+				return errf(410, "invite_expired", "the invite has expired")
+			}
+			ticketKey = kv.Key(bTicketUsed, tk.TicketID[:])
+			if v, err := st.tx.Get(ticketKey); err != nil {
+				return err
+			} else if v != nil {
+				return errf(409, "invite_used", "this invite was already used")
+			}
+			trusted = true
+		}
 		outKey := kv.Key(bOutstanding, in.From[:])
 		out, err := getU32(st.tx, outKey)
 		if err != nil {
@@ -691,26 +701,30 @@ func (r *Relay) submitIntro(ctx context.Context, frame []byte) (*Result, error) 
 			}
 			puts = append(puts, struct{ k, v []byte }{tk, kv.U32(n + 1)})
 		} else {
-			need, err := r.strangerPrice(st.tx, in.From, in.To, rc.Cert, st.now)
+			need, err := r.introBits(st.tx, in.From, in.To, rc.Cert, st.now)
 			if err != nil {
 				return err
-			}
-			if in.PoWBits < need {
-				return errf(402, "pow_required", "this contact request requires a %d-bit proof-of-work stamp", need)
 			}
 			pk := kv.Key(bRecipient, in.To[:])
 			pv, err := st.tx.Get(pk)
 			if err != nil {
 				return err
 			}
-			if p := decodePressure(pv); p.Pending >= r.cfg.MaxPendingPerRecipient {
-				// Full: the cheapest pending stranger request is evicted if this one pays more.
-				minRec, minBits, err := cheapestPending(st.tx, in.To)
+			full := decodePressure(pv).Pending >= r.cfg.MaxPendingPerRecipient
+			if in.PoWBits < need {
+				if full {
+					return errf(429, "outbid", "recipient's request queue is full; a stamp of at least %d bits outbids the cheapest pending request", need)
+				}
+				return errf(402, "pow_required", "this contact request requires a %d-bit proof-of-work stamp", need)
+			}
+			if full {
+				// Full: the cheapest pending stranger request is evicted by this higher bid.
+				minRec, _, err := cheapestPending(st.tx, in.To)
 				if err != nil {
 					return err
 				}
-				if minRec == nil || in.PoWBits <= minBits {
-					return errf(429, "outbid", "recipient's request queue is full; a stamp of at least %d bits outbids the cheapest pending request", minBits+1)
+				if minRec == nil {
+					return errf(429, "recipient_full", "recipient has too many pending contact requests")
 				}
 				if err := closeIntro(st, minRec, statusEvicted); err != nil {
 					return err
@@ -737,6 +751,9 @@ func (r *Relay) submitIntro(ctx context.Context, frame []byte) (*Result, error) 
 		}
 		res.LedgerIdx = idx
 		rec.LedgerIdx = idx
+		if ticketKey != nil {
+			puts = append(puts, struct{ k, v []byte }{ticketKey, in.IntroID[:]})
+		}
 		puts = append(puts,
 			struct{ k, v []byte }{kv.Key(bIntro, in.IntroID[:]), rec.encode()},
 			struct{ k, v []byte }{pairKey, in.IntroID[:]},

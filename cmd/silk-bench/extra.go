@@ -110,7 +110,7 @@ func powBench(ctx context.Context, args []string) error {
 }
 
 // ---------------------------------------------------------------------------
-// spam: attacker model driven by the relay's actual pricing function
+// spam: attacker model driven by the relay's actual pricing functions
 
 func spamSim(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("spam", flag.ExitOnError)
@@ -119,82 +119,78 @@ func spamSim(ctx context.Context, args []string) error {
 	fs.Parse(args)
 	cfg := relay.Config{}
 	def := relay.New(nil, nil, cfg, nil).Config()
+	cap := int(def.MaxPendingPerRecipient)
 	type attacker struct {
 		Name string  `json:"name"`
 		HPS  float64 `json:"hashes_per_sec"`
 	}
-	attackers := []attacker{{"laptop CPU (8-12 cores)", 56e6}, {"consumer GPU", 2e9}, {"high-end GPU", 2e10}, {"GPU farm", 1e12}}
-	type series struct {
-		Attacker      string      `json:"attacker"`
-		HPS           float64     `json:"hashes_per_sec"`
-		Surge         bool        `json:"surge"`
-		Landed        int         `json:"landed_in_hour"`
-		HitCapAtS     float64     `json:"hit_cap_at_s"`
-		FinalBits     uint8       `json:"final_intro_bits"`
-		LegitCostS    float64     `json:"legit_first_contact_cost_s"`
-		Curve         [][2]float64 `json:"curve"` // [seconds, landed]
-		AttackerCostH float64     `json:"attacker_hashes"`
-	}
-	var out []series
+	attackers := []attacker{{"laptop CPU", 56e6}, {"consumer GPU", 2e9}, {"high-end GPU", 2e10}, {"GPU farm", 1e12}}
 	const hour = 3600.0
-	for _, a := range attackers {
-		for _, surge := range []bool{false, true} {
-			c := cfg
-			if !surge {
-				c.MaxSurgeBits = 0
-			}
-			// The pending-pair rule forces one fresh identity per pending intro.
-			s := series{Attacker: a.Name, HPS: a.HPS, Surge: surge, HitCapAtS: -1}
-			t, landed := 0.0, 0
-			var arrivals []float64
-			s.Curve = append(s.Curve, [2]float64{0, 0})
-			for {
-				// load = pending + intros in the last hour (all still pending: the owner never accepts spam)
-				recent := 0
-				for _, at := range arrivals {
-					if t-at < hour {
-						recent++
-					}
-				}
-				load := float64(landed + recent)
-				bits := relay.IntroPrice(c, 0, load, 0)
-				if !surge {
-					bits = def.IntroBaseBits
-				}
-				cost := math.Exp2(float64(def.RegisterBits)) + math.Exp2(float64(bits))
-				dt := cost / a.HPS
-				if t+dt > hour {
-					break
-				}
-				if uint32(landed) >= def.MaxPendingPerRecipient {
-					if s.HitCapAtS < 0 {
-						s.HitCapAtS = math.Round(t*10) / 10
-					}
-					break
-				}
-				t += dt
-				s.AttackerCostH += cost
-				landed++
-				arrivals = append(arrivals, t)
-				if landed%4 == 0 || landed < 32 {
-					s.Curve = append(s.Curve, [2]float64{math.Round(t*1000) / 1000, float64(landed)})
-				}
-			}
-			s.Landed = landed
-			recent := len(arrivals)
-			if surge {
-				s.FinalBits = relay.IntroPrice(c, 0, float64(landed+recent), 0)
-			} else {
-				s.FinalBits = def.IntroBaseBits
-			}
-			s.LegitCostS = math.Round(math.Exp2(float64(s.FinalBits)) / *laptop * 1000) / 1000
-			fmt.Fprintf(os.Stderr, "%-24s surge=%-5v landed %3d/h  cap at %7.1fs  final bits %d  legit cost %.2fs\n", a.Name, surge, landed, s.HitCapAtS, s.FinalBits, s.LegitCostS)
-			out = append(out, s)
-		}
+
+	// 1. Fill phase: how long until an attacker fills a recipient's stranger queue
+	//    (each request needs a fresh identity: one pending request per sender/recipient pair).
+	type fill struct {
+		Attacker     string       `json:"attacker"`
+		HPS          float64      `json:"hashes_per_sec"`
+		SecondsToCap float64      `json:"seconds_to_fill"`
+		Curve        [][2]float64 `json:"curve"`
+		MinBitsHeld  uint8        `json:"cheapest_slot_bits"`
 	}
-	// Pricing table: required bits as a function of recipient load.
+	var fills []fill
+	for _, a := range attackers {
+		f := fill{Attacker: a.Name, HPS: a.HPS}
+		t := 0.0
+		var arrivals []float64
+		f.Curve = append(f.Curve, [2]float64{0, 0})
+		for n := 0; n < cap; n++ {
+			recent := 0
+			for _, at := range arrivals {
+				if t-at < hour {
+					recent++
+				}
+			}
+			bits := relay.IntroPrice(cfg, 0, float64(n+recent), 0)
+			if n == 0 {
+				f.MinBitsHeld = bits
+			}
+			t += (math.Exp2(float64(def.RegisterBits)) + math.Exp2(float64(bits))) / a.HPS
+			arrivals = append(arrivals, t)
+			if n%8 == 7 || n < 8 {
+				f.Curve = append(f.Curve, [2]float64{t, float64(n + 1)})
+			}
+		}
+		f.SecondsToCap = math.Round(t*100) / 100
+		fmt.Fprintf(os.Stderr, "fill: %-14s %10.2fs to fill %d slots\n", a.Name, t, cap)
+		fills = append(fills, f)
+	}
+
+	// 2. Blocking a legitimate stranger. Old rule (iteration 1): a full queue
+	//    rejects everyone, so blocking costs only the fill. New rule: a full
+	//    queue is an auction; to keep out a sender willing to pay B bits the
+	//    attacker must hold every slot at >= B bits, re-buying a slot each time
+	//    one is outbid.
+	type block struct {
+		Bits          uint8              `json:"legit_bits"`
+		LegitLaptopS  float64            `json:"legit_seconds_laptop"`
+		AttackerS     map[string]float64 `json:"attacker_seconds_to_block"`
+		Ratio         float64            `json:"attacker_to_legit_work_ratio"`
+	}
+	var blocks []block
+	for b := uint8(20); b <= 32; b += 2 {
+		bl := block{Bits: b, LegitLaptopS: math.Round(math.Exp2(float64(b)) / *laptop * 1000) / 1000, AttackerS: map[string]float64{}}
+		need := relay.AuctionPrice(cfg, 0, b-1, 0) // price a legit sender faces when the cheapest held slot has b-1 bits
+		_ = need
+		work := float64(cap) * math.Exp2(float64(b))
+		for _, a := range attackers {
+			bl.AttackerS[a.Name] = math.Round(work/a.HPS*1000) / 1000
+		}
+		bl.Ratio = float64(cap)
+		blocks = append(blocks, bl)
+	}
+
+	// 3. Price table (fill phase) and penalties.
 	var table [][2]float64
-	for _, load := range []float64{0, 8, 16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 1024, 4096, 65536} {
+	for _, load := range []float64{0, 8, 16, 32, 48, 64, 96, 128, 192, 256, 384, 512} {
 		table = append(table, [2]float64{load, float64(relay.IntroPrice(cfg, 0, load, 0))})
 	}
 	var penalty [][2]float64
@@ -202,9 +198,11 @@ func spamSim(ctx context.Context, args []string) error {
 		penalty = append(penalty, [2]float64{float64(d), float64(relay.IntroPrice(cfg, 0, 0, float64(d)))})
 	}
 	return writeResult(*outPath, map[string]any{
-		"model": "Discrete-event model of one attacker flooding one recipient for one hour. The relay's IntroPrice function prices each request; each pending request needs a fresh identity (one pending request per sender-recipient pair) costing a registration stamp. The recipient never accepts. Hard cap on pending requests per recipient applies.",
-		"config": map[string]any{"register_bits": def.RegisterBits, "intro_base_bits": def.IntroBaseBits, "max_surge_bits": def.MaxSurgeBits, "max_pending": def.MaxPendingPerRecipient},
-		"series": out, "price_by_load": table, "price_by_declines": penalty, "legit_hps": *laptop,
+		"model": "Uses the relay's IntroPrice and AuctionPrice functions. Each pending stranger request needs a fresh identity (registration stamp) because a sender may have one pending request per recipient. Trusted senders (same owner, or on the recipient owner's signed policy) pay 0 bits and bypass the queue entirely.",
+		"config": map[string]any{"register_bits": def.RegisterBits, "intro_base_bits": def.IntroBaseBits, "max_surge_bits": def.MaxSurgeBits, "queue_slots": cap},
+		"fill": fills, "blocking": blocks, "price_by_load": table, "price_by_declines": penalty, "legit_hps": *laptop,
+		"old_rule": "Iteration 1: when the queue was full, every new stranger request was rejected (recipient_full), so an attacker only had to fill it once.",
+		"new_rule": "Iteration 2: full queue = auction. A legitimate stranger evicts the cheapest pending request by paying one bit more; trusted contacts never queue.",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }

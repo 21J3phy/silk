@@ -2,11 +2,13 @@ package client
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/21J3phy/silk/pkg/relay"
 	"github.com/21J3phy/silk/pkg/wire"
@@ -102,4 +104,20 @@ func (a *Agent) PublishPolicy(ctx context.Context, p *PolicyConfig) (*relay.Resu
 	}
 	p.Serial = pol.Serial
 	return res, writeJSON(a.policyPath(), p, 0o600)
+}
+
+// CreateInvite signs a single-use invite (owner operation). Whoever holds it
+// can send one contact request to this agent without proof-of-work postage.
+func (a *Agent) CreateInvite(ttl time.Duration) (string, error) {
+	if ttl <= 0 || ttl > wire.MaxTicketTTL {
+		return "", fmt.Errorf("invite lifetime must be between 1s and %v", wire.MaxTicketTTL)
+	}
+	owner, err := a.c.OwnerKey()
+	if err != nil {
+		return "", err
+	}
+	t := &wire.Ticket{Recipient: a.ID, Expires: a.c.Now().Add(ttl).UnixMilli()}
+	rand.Read(t.TicketID[:])
+	t.Sign(owner)
+	return t.String(), nil
 }

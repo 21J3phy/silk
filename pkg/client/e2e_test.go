@@ -3,12 +3,17 @@ package client_test
 import (
 	"context"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/21J3phy/silk/pkg/client"
+	"github.com/21J3phy/silk/pkg/kv"
+	"github.com/21J3phy/silk/pkg/kv/pgkv"
 	"github.com/21J3phy/silk/pkg/kv/sqlitekv"
 	"github.com/21J3phy/silk/pkg/ledger"
 	"github.com/21J3phy/silk/pkg/relay"
@@ -25,7 +30,20 @@ type env struct {
 
 func newEnv(t *testing.T, cfg relay.Config) *env {
 	t.Helper()
-	store, err := sqlitekv.Open(filepath.Join(t.TempDir(), "relay.db"), sqlitekv.SQLiteOptions{Synchronous: "NORMAL"})
+	var store kv.Store
+	var err error
+	if dsn := os.Getenv("SILK_TEST_POSTGRES"); dsn != "" {
+		// Run the whole suite against PostgreSQL (the hosted backend).
+		conn, cerr := pgx.Connect(context.Background(), dsn)
+		if cerr != nil {
+			t.Fatal(cerr)
+		}
+		conn.Exec(context.Background(), "DROP TABLE IF EXISTS silk_kv")
+		conn.Close(context.Background())
+		store, err = pgkv.Open(context.Background(), dsn, pgkv.Options{})
+	} else {
+		store, err = sqlitekv.Open(filepath.Join(t.TempDir(), "relay.db"), sqlitekv.SQLiteOptions{Synchronous: "NORMAL"})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,5 +342,33 @@ func TestTrustSkipsPostage(t *testing.T) {
 	info, _, _ = a.Lookup(e.ctx, "@trust-b")
 	if info.IntroPoWBits == 0 {
 		t.Fatal("untrust did not restore postage")
+	}
+}
+
+func TestInviteSkipsPostageOnce(t *testing.T) {
+	e := newEnv(t, relay.Config{IntroBaseBits: 18, MaxPendingPerRecipient: 1})
+	host := e.agent("host", "host")
+	guest := e.agent("guest", "")
+	other := e.agent("other", "")
+	spam := e.agent("spam", "")
+	// Fill the host's one-slot stranger queue.
+	if _, err := spam.RequestContact(e.ctx, "@host", client.IntroOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := host.CreateInvite(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := guest.RequestContact(e.ctx, inv, client.IntroOptions{Note: "invited"})
+	if err != nil || out.PoWBits != 0 {
+		t.Fatalf("invite request: %+v %v", out, err)
+	}
+	// Single use.
+	if _, err := other.RequestContact(e.ctx, inv, client.IntroOptions{}); client.Code(err) != "invite_used" {
+		t.Fatalf("reuse: %v", err)
+	}
+	res, err := host.Sync(e.ctx, 0)
+	if err != nil || len(res.Intros) != 2 {
+		t.Fatalf("host should see both requests: %+v %v", res, err)
 	}
 }

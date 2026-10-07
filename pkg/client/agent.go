@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -348,12 +349,29 @@ func (a *Agent) RequestContact(ctx context.Context, ref string, o IntroOptions) 
 	if !wire.ValidLabel(o.Scope) {
 		return nil, fmt.Errorf("scope %q must be 1-32 chars of a-z 0-9 . _ -", o.Scope)
 	}
+	var ticket *wire.Ticket
+	if strings.HasPrefix(strings.TrimSpace(ref), wire.TicketPrefix) {
+		t, err := wire.ParseInvite(ref)
+		if err != nil {
+			return nil, err
+		}
+		if !t.VerifySig() {
+			return nil, errors.New("invite signature does not verify")
+		}
+		ticket, ref = t, t.Recipient.String()
+	}
 	var out *OutIntro
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		info, cert, err := a.Lookup(ctx, ref)
 		if err != nil {
 			return nil, err
+		}
+		if ticket != nil {
+			if ticket.OwnerPub != cert.OwnerPub {
+				return nil, errors.New("invite was not signed by this agent's owner")
+			}
+			info.IntroPoWBits = 0 // the invite replaces postage
 		}
 		if !info.AcceptIntros {
 			return nil, fmt.Errorf("%s does not accept contact requests", ref)
@@ -367,6 +385,9 @@ func (a *Agent) RequestContact(ctx context.Context, ref string, o IntroOptions) 
 			return nil, err
 		}
 		in.EphPub = eph.Public()
+		if ticket != nil {
+			in.Ticket = ticket.Raw
+		}
 		k1, err := seal.SealIntro(in, cert.KEMPub, o.Note)
 		if err != nil {
 			return nil, err

@@ -26,8 +26,13 @@ const MinClient = "2.0.0"
 
 // HTTPOptions configures the HTTP front end.
 type HTTPOptions struct {
-	// TrustProxy uses the first X-Forwarded-For address for rate limiting (set behind a trusted proxy such as Vercel).
+	// TrustProxy rate-limits by the client address a trusted reverse proxy
+	// reports: ClientIPHeader if set (e.g. "X-Vercel-Forwarded-For", which only
+	// Vercel's edge sets), otherwise the last X-Forwarded-For hop.
 	TrustProxy bool
+	// ClientIPHeader is a header that the deployment's proxy always overwrites.
+	// Never set it to a header clients can send through your proxy unchanged.
+	ClientIPHeader string
 	// PostRate and GetRate are per-IP requests/second (defaults 30 and 60; negative disables).
 	PostRate, GetRate float64
 	// RegisterRate is per-IP new identities/second (default 1/60 with a burst of 10; negative disables).
@@ -114,14 +119,12 @@ func (h *httpAPI) wrap(next http.Handler) http.Handler {
 
 func (h *httpAPI) clientIP(req *http.Request) string {
 	if h.o.TrustProxy {
-		// Vercel sets this itself; clients cannot forge it.
-		if v := req.Header.Get("X-Vercel-Forwarded-For"); v != "" {
-			return strings.TrimSpace(strings.Split(v, ",")[0])
+		if h.o.ClientIPHeader != "" {
+			if v := req.Header.Get(h.o.ClientIPHeader); v != "" {
+				return strings.TrimSpace(strings.Split(v, ",")[0])
+			}
 		}
-		if ip := req.Header.Get("X-Real-Ip"); ip != "" {
-			return ip
-		}
-		// Otherwise trust only the address our own proxy appended (the last entry).
+		// Only the hop our own proxy appended (the last entry) is trustworthy.
 		if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")
 			return strings.TrimSpace(parts[len(parts)-1])

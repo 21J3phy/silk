@@ -6,6 +6,7 @@ package relay_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"crypto/ed25519"
 	"crypto/rand"
 	"net/http"
@@ -234,3 +235,44 @@ func TestRegressBatchChargedPerFrame(t *testing.T) {
 }
 
 func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
+
+// Behind a self-hosted proxy, clients could pick their own rate-limit bucket
+// by sending a header the proxy passes through unchanged.
+func TestRegressSpoofedClientIP(t *testing.T) {
+	f := newFixture(t, relay.Config{})
+	srv := serve(t, f.r, relay.HTTPOptions{TrustProxy: true, PostRate: -1, GetRate: 1, RegisterRate: -1}) // burst 4
+	limited := 0
+	for i := 0; i < 12; i++ {
+		req, _ := http.NewRequest("GET", srv.URL+"/v2/info", nil)
+		req.Header.Set("X-Vercel-Forwarded-For", fmt.Sprintf("10.0.0.%d", i))
+		req.Header.Set("X-Real-Ip", fmt.Sprintf("10.0.1.%d", i))
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("10.0.2.%d, 192.0.2.7", i)) // the proxy's own hop is last
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 429 {
+			limited++
+		}
+	}
+	if limited == 0 {
+		t.Fatal("spoofed client-IP headers escaped the per-IP limit")
+	}
+}
+
+// Expired messages no longer pin a conversation's backlog until the sweep runs.
+func TestRegressBacklogClearsExpired(t *testing.T) {
+	f := newFixture(t, relay.Config{MaxPendingPerGrant: 2})
+	c := f.connect(600)
+	for i := 0; i < 2; i++ {
+		m := &wire.Msg{GrantID: c.grant.GrantID, Created: f.clk.now().UnixMilli(), TTL: 1}
+		c.sa.Encrypt(m, seal.TypeText, []byte("short"))
+		m.Sign(c.x.sign)
+		_, err := f.r.Submit(f.ctx, m.Raw)
+		f.expect(err, "")
+	}
+	f.clk.add(2 * time.Second)
+	_, err := f.r.Submit(f.ctx, f.msg(c, "after expiry").Raw)
+	f.expect(err, "")
+}

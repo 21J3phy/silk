@@ -72,7 +72,8 @@ func setup() {
 		ReleaseKeys:   releaseKeys,
 	}, nil)
 	r.Version = Version
-	h = relay.Handler(r, relay.HTTPOptions{TrustProxy: true, MaxWait: 25 * time.Second})
+	// Vercel's edge always sets X-Vercel-Forwarded-For; clients cannot forge it.
+	h = relay.Handler(r, relay.HTTPOptions{TrustProxy: true, ClientIPHeader: "X-Vercel-Forwarded-For", MaxWait: 25 * time.Second})
 }
 
 type setupError string

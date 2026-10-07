@@ -36,7 +36,9 @@ func (a *Agent) Policy() (*PolicyConfig, error) {
 // Trust adds a peer (its agent id, or with wholeOwner every agent of its owner)
 // to the policy, signs it with the owner key, and publishes it.
 func (a *Agent) Trust(ctx context.Context, ref string, wholeOwner, remove bool) (*PolicyConfig, *relay.Result, error) {
-	_, cert, err := a.Lookup(ctx, ref)
+	// Pinned and proven on the ledger: trusting the wrong owner key would let a
+	// stranger skip postage and the queue.
+	_, cert, err := a.resolvePeer(ctx, ref)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -1265,7 +1265,22 @@ func (r *Relay) submitMsg(ctx context.Context, frame []byte) (*Result, error) {
 			return errf(429, "rate_limited", "grant allows %d messages per minute in this direction", g.Rate)
 		}
 		if ctr.Pending[m.Dir] >= r.cfg.MaxPendingPerGrant {
-			return errf(429, "backlog_full", "the recipient has %d unacknowledged messages in this conversation", ctr.Pending[m.Dir])
+			// Expired messages may not have been swept yet; clear this conversation's first.
+			if err := expireGrantBacklog(st, m.GrantID, 500); err != nil {
+				return err
+			}
+			if cv, err = st.tx.Get(ctrKey); err != nil {
+				return err
+			}
+			if ctr, err = decodeGrantCtr(cv); err != nil {
+				return err
+			}
+			if st.now-ctr.WinStart >= 60_000 {
+				ctr.WinStart, ctr.WinCount = st.now, [2]uint16{}
+			}
+			if ctr.Pending[m.Dir] >= r.cfg.MaxPendingPerGrant {
+				return errf(429, "backlog_full", "the recipient has %d unacknowledged messages in this conversation", ctr.Pending[m.Dir])
+			}
 		}
 		pending, err := getU64(st.tx, kv.Key(bStat, []byte("inbox."), recipient[:]))
 		if err != nil {
@@ -1311,6 +1326,39 @@ func (r *Relay) submitMsg(ctx context.Context, frame []byte) (*Result, error) {
 		return nil, err
 	}
 	return res, nil
+}
+
+// expireGrantBacklog closes up to limit expired pending messages of one grant.
+func expireGrantBacklog(st *txState, grant wire.ID, limit int) error {
+	prefix := kv.Key(bGrantOpen, grant[:])
+	var ids []wire.ID
+	if err := st.tx.Scan(prefix, kv.PrefixEnd(prefix), 0, func(k, _ []byte) bool {
+		var id wire.ID
+		copy(id[:], k[len(prefix):])
+		ids = append(ids, id)
+		return true
+	}); err != nil {
+		return err
+	}
+	closed := 0
+	for _, id := range ids {
+		if closed >= limit {
+			break
+		}
+		v, err := st.tx.Get(kv.Key(bMsg, id[:]))
+		if err != nil || v == nil {
+			continue
+		}
+		mr, err := decodeMsg(v)
+		if err != nil || mr.Status != statusPending || mr.Expires > st.now {
+			continue
+		}
+		if err := closeMsg(st, id, mr, statusExpired); err != nil {
+			return err
+		}
+		closed++
+	}
+	return nil
 }
 
 // closeMsg removes a pending message's content and inbox entry.

@@ -132,10 +132,7 @@ func TestEndToEnd(t *testing.T) {
 	if res.Messages[0].FromHandle != "alice-claude" {
 		t.Fatalf("sender handle %q", res.Messages[0].FromHandle)
 	}
-	if _, err := bob.Ack(e.ctx, res.Messages[0].ID, "handled"); err != nil {
-		t.Fatal(err)
-	}
-	// Bob replies in the same conversation.
+	// Bob replies in the same conversation; the reply carries the "handled" ack in the same request.
 	reply, err := bob.Send(e.ctx, grant, `{"ok":true}`, client.SendOptions{JSON: true, ReplyTo: res.Messages[0].ID})
 	if err != nil {
 		t.Fatal(err)

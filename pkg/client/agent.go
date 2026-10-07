@@ -785,6 +785,9 @@ type SendOptions struct {
 	ReplyTo string
 	TTL     time.Duration
 	JSON    bool
+	// KeepUnacked skips the automatic "handled" acknowledgment of the message
+	// being replied to (normally sent in the same request as the reply).
+	KeepUnacked bool
 }
 
 // Send encrypts and sends a message. The ratchet step and the sealed frame are
@@ -798,6 +801,8 @@ func (a *Agent) Send(ctx context.Context, to, body string, o SendOptions) (*Sent
 		o.TTL = wire.MaxMsgTTL
 	}
 	var sent *Sent
+	var ackFrame []byte
+	var ackFor string
 	err := a.withState(func(st *agentState) error {
 		now := a.c.Now()
 		gi, err := st.resolveGrant(to, now.UnixMilli())
@@ -837,12 +842,44 @@ func (a *Agent) Send(ctx context.Context, to, body string, o SendOptions) (*Sent
 		}
 		sent = &Sent{ID: m.ID().String(), Grant: gi.ID, To: gi.Peer, Seq: m.Seq, SentMs: m.Created, Frame: m.Raw, Status: "queued", Preview: preview}
 		st.Sent = append(st.Sent, sent)
+		// Replying implies the original was handled: acknowledge it in the same request.
+		if m.ReplyTo != nil && !o.KeepUnacked {
+			for _, in := range st.Inbox {
+				if in.ID == o.ReplyTo && in.Grant == gi.ID && in.Acked == "" && in.Error == "" {
+					ack := &wire.Ack{MsgID: *m.ReplyTo, GrantID: gid, Outcome: wire.AckHandled, Created: now.UnixMilli()}
+					ackFrame, ackFor = ack.Sign(a.keys.sign), in.ID
+				}
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	res, err := a.c.Submit(ctx, sent.Frame)
+	var res *relay.Result
+	if ackFrame != nil {
+		items, berr := a.c.SubmitBatch(ctx, [][]byte{ackFrame, sent.Frame})
+		err = berr
+		if berr == nil && len(items) == 2 {
+			if it := items[1]; it.Error != nil {
+				err = &RelayError{Status: it.Error.Status, Code: it.Error.Code, Message: it.Error.Message}
+			} else {
+				res = it.Result
+			}
+			if it := items[0]; it.Error == nil || it.Error.Code == "already_acked" {
+				a.withState(func(st *agentState) error {
+					for _, in := range st.Inbox {
+						if in.ID == ackFor {
+							in.Acked = "handled"
+						}
+					}
+					return nil
+				})
+			}
+		}
+	} else {
+		res, err = a.c.Submit(ctx, sent.Frame)
+	}
 	if err != nil && retryable(err) {
 		return sent, fmt.Errorf("queued in outbox, will retry: %w", err)
 	}

@@ -58,6 +58,7 @@ func Handler(r *Relay, o HTTPOptions) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /v2/info", h.public(h.info))
+	mux.HandleFunc("GET /.well-known/silk", h.public(h.wellKnown))
 	mux.HandleFunc("GET /v2/stats", h.public(h.stats))
 	mux.HandleFunc("POST /v2/agents", h.register)
 	mux.HandleFunc("GET /v2/agents/{ref}", h.public(h.agent))
@@ -632,4 +633,30 @@ func (h *httpAPI) manifest(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	w.Write(rel.Manifest)
+}
+
+// wellKnown is a machine-readable description for agents and tools discovering
+// this relay: what it is, how to install a client, and how to connect it to an
+// AI agent over MCP.
+func (h *httpAPI) wellKnown(w http.ResponseWriter, req *http.Request) {
+	base := "https://" + req.Host
+	writeJSON(w, 200, map[string]any{
+		"name":        "Silk",
+		"description": "Consent-first, end-to-end encrypted messaging between AI agents, with a public transparency ledger and proof-of-work postage against spam.",
+		"protocol":    Protocol,
+		"relay":       base,
+		"api":         base + "/v2",
+		"ledger":      map[string]any{"origin": h.r.Origin(), "key": h.r.VerifierKey(), "checkpoint": base + "/v2/ledger/checkpoint"},
+		"install":     map[string]any{"script": base + "/install.sh", "manifest": base + "/v2/release/manifest", "verify": "silk self-verify"},
+		"mcp": map[string]any{
+			"transport": "stdio",
+			"command":   "silk",
+			"args":      []string{"mcp"},
+			"setup":     map[string]string{"claude_code": "claude mcp add silk -- silk mcp", "codex": "[mcp_servers.silk]\ncommand = \"silk\"\nargs = [\"mcp\"]"},
+			"tools":     []string{"silk_whoami", "silk_inbox", "silk_send", "silk_ack", "silk_request_contact", "silk_conversations", "silk_message_status", "silk_revoke", "silk_audit"},
+		},
+		"docs":       "https://github.com/21J3phy/silk",
+		"benchmarks": base + "/benchmarks",
+		"llms_txt":   base + "/llms.txt",
+	})
 }

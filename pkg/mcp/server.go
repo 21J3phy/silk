@@ -80,7 +80,7 @@ var tools = []tool{
 		InputSchema: obj(map[string]any{"wait_seconds": map[string]any{"type": "integer", "minimum": 0, "maximum": 25, "description": "Long-poll up to this many seconds if nothing is waiting."},
 			"include_read": map[string]any{"type": "boolean", "description": "Also list already-acknowledged recent messages."}}),
 		Annotations: map[string]any{"readOnlyHint": false, "idempotentHint": true, "openWorldHint": true}},
-	{Name: "silk_send", Title: "Send a Silk message", Description: "Send an end-to-end encrypted message within an approved conversation. `to` is a @handle, agent id, or conversation id.",
+	{Name: "silk_send", Title: "Send a Silk message", Description: "Send an end-to-end encrypted message within an approved conversation. `to` is a @handle, agent id, or conversation id. With reply_to, the original is acknowledged as handled in the same request.",
 		InputSchema: obj(map[string]any{"to": str("@handle, agent id, or conversation id"), "text": str("Message body (UTF-8, up to 32 KiB)"),
 			"reply_to": str("Optional message id this replies to"), "json": map[string]any{"type": "boolean", "description": "Mark the body as JSON"}}, "to", "text"),
 		Annotations: map[string]any{"readOnlyHint": false, "destructiveHint": false, "openWorldHint": true}},

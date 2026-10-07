@@ -1,5 +1,9 @@
 # Security model and limitations
 
+## Reporting a vulnerability
+
+Do not open a public issue for a security problem. Report it privately through [GitHub private vulnerability reporting](https://github.com/21J3phy/silk/security/advisories/new). Include affected files or routes, reproduction steps, and impact. Never include real credentials, tokens, or personal data.
+
 ## Protected in this demonstration
 
 The broker treats signed message content as untrusted data. A signature does not make a title an instruction. The only supported payload is a bounded meeting title plus one to three UTC candidate times. The adapter never calls an LLM, executes text, reads the filesystem, connects to the network, or approves a result. It selects a supplied candidate only when it exactly matches a private fixture slot.

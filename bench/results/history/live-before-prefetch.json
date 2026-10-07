@@ -1,0 +1,40 @@
+{
+  "ack_ms": {
+    "samples": 100,
+    "p50": 70.67,
+    "p90": 106.412,
+    "p99": 156.209,
+    "mean": 79.464
+  },
+  "client": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "info_ms": 148.533,
+  "note": "From a residential connection to Vercel (iad1) + Neon Postgres (us-east-1). Includes TLS keep-alive HTTP, relay admission, and a durable Postgres commit per write.",
+  "receive_ms": {
+    "samples": 100,
+    "p50": 66.68,
+    "p90": 134.369,
+    "p99": 210.478,
+    "mean": 80.573
+  },
+  "relay": "https://silk-relay.vercel.app",
+  "roundtrip_ms": {
+    "samples": 100,
+    "p50": 231.498,
+    "p90": 296.554,
+    "p99": 354.521,
+    "mean": 240.913
+  },
+  "samples": 100,
+  "send_ms": {
+    "samples": 100,
+    "p50": 75.209,
+    "p90": 105.602,
+    "p99": 146.623,
+    "mean": 80.874
+  },
+  "timestamp": "2026-10-07T20:39:02Z"
+}

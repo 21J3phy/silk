@@ -1,0 +1,94 @@
+{
+  "system": "v1-broker",
+  "language": "python 3.12.12",
+  "machine": {
+    "cpu": "Apple M2 Pro",
+    "cores": 12,
+    "os": "macOS 27.0 (26A5378n), Darwin 27.0.0, arm64"
+  },
+  "timestamp": "2026-10-07T06:52:53Z",
+  "limits_overridden": [
+    "silk.service.RATE_PER_MINUTE 6 -> 1000000 (module global rebound by bench/v1/launch_broker.py before the server is built; per sender->recipient rolling-minute admission limit in Service._receive)",
+    "silk.service.MAX_TURNS 8 -> 1000000 (upper bound for an invitation's max_turns; the benchmark grant is then created through the real HTTP invite + accept flow with max_turns=1000000)",
+    "silk.service.MAX_MESSAGES 1000 -> 1000000 (local message storage cap checked in Service._receive)"
+  ],
+  "send_throughput": [
+    {
+      "concurrency": 1,
+      "requests": 2000,
+      "seconds": 5.867,
+      "msgs_per_sec": 340.9,
+      "p50_ms": 2.398,
+      "p90_ms": 3.628,
+      "p99_ms": 8.214,
+      "errors": 0
+    },
+    {
+      "concurrency": 4,
+      "requests": 2000,
+      "seconds": 3.783,
+      "msgs_per_sec": 528.7,
+      "p50_ms": 5.289,
+      "p90_ms": 9.177,
+      "p99_ms": 74.97,
+      "errors": 0
+    },
+    {
+      "concurrency": 16,
+      "requests": 2000,
+      "seconds": 4.057,
+      "msgs_per_sec": 491.8,
+      "p50_ms": 26.614,
+      "p90_ms": 42.148,
+      "p99_ms": 140.04,
+      "errors": 5
+    },
+    {
+      "concurrency": 64,
+      "requests": 2000,
+      "seconds": 3.549,
+      "msgs_per_sec": 560.2,
+      "p50_ms": 88.12,
+      "p90_ms": 206.023,
+      "p99_ms": 239.088,
+      "errors": 12
+    }
+  ],
+  "roundtrip_ms": {
+    "samples": 300,
+    "p50": 256.818,
+    "p90": 470.379,
+    "p99": 511.188,
+    "mean": 268.857
+  },
+  "wire_bytes": {
+    "send": 1936,
+    "roundtrip": 5880
+  },
+  "rss_mb": {
+    "idle": 33.3,
+    "peak": 38.4
+  },
+  "cpu_ms_per_msg": 1.974,
+  "cold_start_ms": 128.0,
+  "install_mb": 11.7,
+  "notes": [
+    "Server: unmodified silk/server.py ThreadingHTTPServer (HTTP/1.0, one TCP connection per request, listen backlog 5) + silk/service.py, started via bench/v1/launch_broker.py which only rebinds the three limit globals listed in limits_overridden. Background dispatcher (500 ms poll) runs as in production.",
+    "Storage: SQLite 3.50.4 via the code's own settings (rollback journal_mode=delete default, synchronous=2 i.e. FULL compile default, BEGIN IMMEDIATE per admission). DB file in $TMPDIR on the internal APFS SSD.",
+    "Send = POST /api/envelopes with a client-side Ed25519-signed envelope (signing key read read-only from the broker's fixture_keys table, as tests do via Service.keys). Envelopes are signed and request bytes pre-built before timing (2000 envelopes in ~220 ms). Server still canonicalizes, validates and verifies every signature.",
+    "Throughput: each concurrency level runs on a fresh server + empty DB: 100 untimed warmup sends, then 2000 timed sends, closed loop (each worker sends its next request when the previous response arrives). Latency = connect + request + full response (connection-per-request is forced by the HTTP/1.0 server). Percentiles are over accepted sends; errors are counted and never retried.",
+    "Throughput errors by kind per concurrency: c=1: none; c=4: none; c=16: {'ConnectionResetError': 5}; c=64: {'ConnectionResetError': 12}",
+    "Cause of ConnectionResetError: the broker listens with socketserver's default backlog (TCPServer.request_queue_size = 5; silk/server.py does not change it) and macOS resets connection attempts that overflow the accept queue. The request is never sent, so no message is admitted. Accept-queue probe in this run (GET /health, 50 connections per worker, no app work): 4 concurrent: {'ok': 200}; 8 concurrent: {'ok': 253, 'connect ConnectionResetError': 147}; 16 concurrent: {'connect ConnectionResetError': 493, 'ok': 307}. A client could safely retry these (envelope retries are idempotent), but this benchmark does not retry.",
+    "Post-run dispatcher check (message status counts in DB per level): c=1: {'awaiting_approval': 2100}; c=4: {'awaiting_approval': 2100}; c=16: {'awaiting_approval': 2095}; c=64: {'awaiting_approval': 2045}",
+    "With limits lifted, per-request work grows with table size: the rate-limit COUNT over the (sender,recipient,accepted_at) index covers every message of the last minute, SELECT COUNT(*) FROM messages runs per admission, and _expire() scans queued/awaiting_approval rows on every admission and every /api/state. The unpatched system never exceeds 6 messages/minute/pair or 1000 rows, so it never pays this at scale.",
+    "Load generator: one Python 3.12 asyncio process using raw sockets and pre-built request bytes (no httpx), separate from the server process. Client CPU per timed run: c=1: 0.62s CPU / 5.87s wall (11% of one core, 311 us/request); c=4: 0.48s CPU / 3.78s wall (13% of one core, 240 us/request); c=16: 0.50s CPU / 4.06s wall (12% of one core, 252 us/request); c=64: 0.47s CPU / 3.55s wall (13% of one core, 235 us/request)",
+    "Roundtrip: fresh server; per sample, sign envelope (untimed) -> t0 -> POST /api/envelopes (201) -> poll GET /api/state as bob (the same endpoint the web UI polls every 2000 ms; here polled with a 5 ms gap after each response) until that message's status is awaiting_approval -> t1. Dominated by the dispatcher's 500 ms wake-up interval. Before each sample an untimed pause drawn from U(0, 500 ms) (seed 20261007) puts the send at a random phase of the dispatcher cycle; without it a sequential client phase-locks (sends right after a dispatch) and every sample measures ~505 ms (seen in a trial run). Mean polls/sample 26.2; mean /api/state call 4.07 ms.",
+    "/api/state returns the recipient's full history, so it grows with message count: 3944 bytes with 1 message, 260745 bytes response after 305 messages. Roundtrip mean over first 50 samples 262.5 ms vs last 50 282.3 ms.",
+    "wire_bytes: HTTP bytes only (request line + headers + body, status line + headers + body), no TCP/IP framing. Client sends a minimal header set (Host, Content-Type, Content-Length; Cookie for /api/state). send = 1936 (POST /api/envelopes request+response). roundtrip = send + the single GET /api/state request+response that observed the message on a fresh DB with 1 message (3944); the 25.2 extra empty polls per roundtrip (mean 127349 bytes each over the run) are excluded.",
+    "rss_mb: idle = median over the fresh throughput servers of RSS 1 s after the first healthy /health (28.2, 33.3, 33.5, 33.2 MB); peak = max RSS sampled every 20 ms from startup through warmup, timed run and dispatcher drain (per level: c=1 33.4, c=4 37.7, c=16 38.4, c=64 36.3 MB).",
+    "cpu_ms_per_msg: server user+sys CPU over the c=16 timed run only (3.938 s / 1995 accepted). Including the dispatcher draining the remaining queue after the run: 1.985 ms/msg.",
+    "cold_start_ms: median of 5 spawns of the real unpatched entrypoint `python -m silk --port 8765 --db <new file>` until the first HTTP 200 from GET /health (probe every 2 ms); includes interpreter start, imports, schema creation and fixture key generation. Runs: 110, 130, 96, 232, 128 ms (run_all.sh recreates the venv, so the first spawn may also write .pyc caches; hence the median).",
+    "install_mb: du -sk of site-packages in a fresh `uv venv --python 3.12` (Python 3.12.12) with only requirements-dev.txt installed (cffi 2.1.1, cryptography 50.0.2, pycparser 3.0) = 11.7 MB; .pyc caches excluded (uv does not byte-compile); the CPython interpreter itself (/Users/nrav/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none, 56 MB) is not included. Import of silk.server verified from that venv.",
+    "Machine load average at start: 6.44/6.52/7.42; other processes were not stopped, so absolute numbers carry normal desktop noise."
+  ]
+}

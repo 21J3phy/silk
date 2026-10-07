@@ -1,0 +1,66 @@
+{
+  "auth": {
+    "header": "v2h y4b3sfyurvr5j2chwoxsf4dkxu 1791400003000 _2-3i7XkaJI4VX2sfEX-vPB2F7ZoHbz1ZERpr3itFrBjBHwIpz_8j1CHdxEI9YP9TRXXTPv6XjgHD3ZKVk4eBQ"
+  },
+  "cert": {
+    "frame": "02018a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c06636c617564650c616c6963652d636c61756465000000018139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394000104c0abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab000001a117c2ba00000001a86f73e6000001c4da0d4707716b561fa1e857b98bbed5dadcf14117e46e70979fdc9a1f381663d6032b4bbde26fc1dcee81b0174ea18a6dd072bd195687f7632c0bbcc131340b04fe9fa52c68b1336a7dd4db2f0f4f54af309853baf6d98315ea72523f5dff7019c07b2ff4606a93f4194d1d4d076102c11186d8e4b300a0d394c14a58a69b02",
+    "sha256": "5d2e3e87482f7d69a741657eafaf2619c1602c7b398b6f7636b7ffc82cb2359e"
+  },
+  "description": "Silk v2 test vectors. All byte strings are hex. Seeds are 32 repeated bytes.",
+  "identity": {
+    "agent_id": "c703b917148d63d4e847b3af22f06abd",
+    "agent_id_text": "y4b3sfyurvr5j2chwoxsf4dkxu",
+    "agent_pub": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+    "agent_seed": "0202020202020202020202020202020202020202020202020202020202020202",
+    "label": "claude",
+    "owner_pub": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+    "owner_seed": "0101010101010101010101010101010101010101010101010101010101010101"
+  },
+  "ledger": {
+    "checkpoint_body": "example.silk.relay\n3\n/a9n3ft0P83kPKtJzbRfbBVCiCxSOaQo+sm5pqr3nnM=\n",
+    "leaves": [
+      "01000001a117c2ba005d2e3e87482f7d69a741657eafaf2619c1602c7b398b6f7636b7ffc82cb2359e",
+      "05000001a117c2bde89da33ee429d45630bf142e1ae2ee917fbc156bf56650771b6a315e7f3845ab62",
+      "05000001a117c2c1d02d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+    ],
+    "root_size_3": "fdaf67ddfb743fcde43cab49cdb45f6c1542882c5239a428fac9b9a6aaf79e73"
+  },
+  "msg_frame": {
+    "frame": "0205111111111111111111111111111111110000000000000001a117c2bde800000e1000000021222222222222222222222222222222222222222222222222222222222222222222785ec96586dce2296823a6e9a19d2c9b83a43e2aad53004b713ab909b3379ff04c792c4829f0a7476f677b9ae8c4afa5551c50e87235ff2ddb8a3ec15ba75b0a",
+    "header": "0205111111111111111111111111111111110000000000000001a117c2bde800000e10",
+    "id": "9da33ee429d45630bf142e1ae2ee917f"
+  },
+  "pow": {
+    "bits": 8,
+    "digest": "3c32618d9b3f0174ee6865844e618e73bae355dd90452f36b2d96783fcae223a",
+    "domain": "silk/v2/pow/intro",
+    "prefix": "73696c6b207465737420707265666978",
+    "smallest_nonce": 338
+  },
+  "ratchet": {
+    "chain_ab": "1b2bc53225527612b31391dd3cb0dc7996c9291007b408900d01ded51390893d",
+    "chain_ba": "b8aec9b8efb1ae74eaa6a8a884e6588f287c07df0c5c168c4488a6c84c5122d0",
+    "encrypt_text_hello_at_seq0": {
+      "ciphertext": "6c04018783153cc8350110c2affeed722cbc4c1b8db2",
+      "header": "0205111111111111111111111111111111110000000000000001a117c2bde800000e10"
+    },
+    "root": "0909090909090909090909090909090909090909090909090909090909090909",
+    "steps_ab": [
+      {
+        "chain_key": "1b2bc53225527612b31391dd3cb0dc7996c9291007b408900d01ded51390893d",
+        "message_key": "7da9e10ea206fdb2d2254832978e7b7f188e5a5eab0a9cf329ed68766f56ffb3",
+        "nonce": "73b8313bf7e605480e7e4f27"
+      },
+      {
+        "chain_key": "58fe6ba2ed03cf6881c61ea4b46991b8199368c8d425b4130b55f555ec5ab45e",
+        "message_key": "6963c36bd0a8bdad5f0ac2e33e5105ff61b0799109d8f8a4c9e834cf7d4668e4",
+        "nonce": "0ec63666af166cab16a4d1db"
+      },
+      {
+        "chain_key": "e5be9337103e1d8b64e91916afbfbc06d076cb6fab25418a64368c7e31c24986",
+        "message_key": "2d9c827fa40baf489d6f2c90206c9183f5df95c8ee286126d8250c3009152030",
+        "nonce": "3c4108fdbb6da0e853a0faa8"
+      }
+    ]
+  }
+}

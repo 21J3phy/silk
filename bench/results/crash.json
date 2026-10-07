@@ -1,0 +1,209 @@
+{
+  "method": "Relay (SQLite WAL, synchronous=FULL, group commit) under 16 concurrent senders is killed with SIGKILL at a random time, restarted on the same database, and every previously acknowledged message is looked up by its SHA-256 commitment; its ledger index must match the index returned at acknowledgment. The post-restart checkpoint must be provably consistent with a checkpoint fetched before the kill.",
+  "note": "Requests in flight at the kill have an unknown outcome to the client; the protocol makes retrying them safe (identical frames are deduplicated).",
+  "rounds": [
+    {
+      "round": 1,
+      "killed_after_ms": 1493,
+      "acknowledged": 11357,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 6282,
+      "ledger_size_after_restart": 11421,
+      "consistent": true
+    },
+    {
+      "round": 2,
+      "killed_after_ms": 1266,
+      "acknowledged": 7146,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 14935,
+      "ledger_size_after_restart": 18567,
+      "consistent": true
+    },
+    {
+      "round": 3,
+      "killed_after_ms": 877,
+      "acknowledged": 4473,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 20752,
+      "ledger_size_after_restart": 23046,
+      "consistent": true
+    },
+    {
+      "round": 4,
+      "killed_after_ms": 273,
+      "acknowledged": 1181,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 23597,
+      "ledger_size_after_restart": 24227,
+      "consistent": true
+    },
+    {
+      "round": 5,
+      "killed_after_ms": 1314,
+      "acknowledged": 6477,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 27385,
+      "ledger_size_after_restart": 30712,
+      "consistent": true
+    },
+    {
+      "round": 6,
+      "killed_after_ms": 1141,
+      "acknowledged": 5242,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 33026,
+      "ledger_size_after_restart": 35962,
+      "consistent": true
+    },
+    {
+      "round": 7,
+      "killed_after_ms": 1017,
+      "acknowledged": 5176,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 38531,
+      "ledger_size_after_restart": 41138,
+      "consistent": true
+    },
+    {
+      "round": 8,
+      "killed_after_ms": 500,
+      "acknowledged": 2209,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 42195,
+      "ledger_size_after_restart": 43353,
+      "consistent": true
+    },
+    {
+      "round": 9,
+      "killed_after_ms": 467,
+      "acknowledged": 2156,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 44389,
+      "ledger_size_after_restart": 45509,
+      "consistent": true
+    },
+    {
+      "round": 10,
+      "killed_after_ms": 222,
+      "acknowledged": 1026,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 45987,
+      "ledger_size_after_restart": 46546,
+      "consistent": true
+    },
+    {
+      "round": 11,
+      "killed_after_ms": 205,
+      "acknowledged": 866,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 46964,
+      "ledger_size_after_restart": 47420,
+      "consistent": true
+    },
+    {
+      "round": 12,
+      "killed_after_ms": 545,
+      "acknowledged": 2123,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 48445,
+      "ledger_size_after_restart": 49549,
+      "consistent": true
+    },
+    {
+      "round": 13,
+      "killed_after_ms": 458,
+      "acknowledged": 1974,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 50478,
+      "ledger_size_after_restart": 51534,
+      "consistent": true
+    },
+    {
+      "round": 14,
+      "killed_after_ms": 486,
+      "acknowledged": 1972,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 52481,
+      "ledger_size_after_restart": 53506,
+      "consistent": true
+    },
+    {
+      "round": 15,
+      "killed_after_ms": 1255,
+      "acknowledged": 5685,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 56163,
+      "ledger_size_after_restart": 59199,
+      "consistent": true
+    },
+    {
+      "round": 16,
+      "killed_after_ms": 458,
+      "acknowledged": 2018,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 60123,
+      "ledger_size_after_restart": 61217,
+      "consistent": true
+    },
+    {
+      "round": 17,
+      "killed_after_ms": 797,
+      "acknowledged": 2653,
+      "lost": 0,
+      "in_flight_at_kill": 15,
+      "ledger_size_before_kill": 62319,
+      "ledger_size_after_restart": 63871,
+      "consistent": true
+    },
+    {
+      "round": 18,
+      "killed_after_ms": 608,
+      "acknowledged": 2906,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 65225,
+      "ledger_size_after_restart": 66784,
+      "consistent": true
+    },
+    {
+      "round": 19,
+      "killed_after_ms": 671,
+      "acknowledged": 3325,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 68386,
+      "ledger_size_after_restart": 70114,
+      "consistent": true
+    },
+    {
+      "round": 20,
+      "killed_after_ms": 286,
+      "acknowledged": 1236,
+      "lost": 0,
+      "in_flight_at_kill": 16,
+      "ledger_size_before_kill": 70719,
+      "ledger_size_after_restart": 71350,
+      "consistent": true
+    }
+  ],
+  "timestamp": "2026-10-07T18:56:53Z",
+  "total_acknowledged": 71201,
+  "total_lost": 0
+}

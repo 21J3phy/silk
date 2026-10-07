@@ -1,0 +1,77 @@
+{
+  "cores": 12,
+  "machine": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "rows": [
+    {
+      "bits": 12,
+      "expected_hashes": 4096,
+      "trials": 40,
+      "all_cores_mean_ms": 0.261,
+      "all_cores_p90_ms": 0.318,
+      "one_core_mean_ms": 0.229
+    },
+    {
+      "bits": 14,
+      "expected_hashes": 16384,
+      "trials": 40,
+      "all_cores_mean_ms": 0.37,
+      "all_cores_p90_ms": 0.446,
+      "one_core_mean_ms": 0.866
+    },
+    {
+      "bits": 16,
+      "expected_hashes": 65536,
+      "trials": 40,
+      "all_cores_mean_ms": 0.643,
+      "all_cores_p90_ms": 1.125,
+      "one_core_mean_ms": 2.853
+    },
+    {
+      "bits": 18,
+      "expected_hashes": 262144,
+      "trials": 40,
+      "all_cores_mean_ms": 2.215,
+      "all_cores_p90_ms": 5.093,
+      "one_core_mean_ms": 18.824
+    },
+    {
+      "bits": 20,
+      "expected_hashes": 1048576,
+      "trials": 40,
+      "all_cores_mean_ms": 5.996,
+      "all_cores_p90_ms": 11.776,
+      "one_core_mean_ms": 59.661
+    },
+    {
+      "bits": 22,
+      "expected_hashes": 4194304,
+      "trials": 12,
+      "all_cores_mean_ms": 23.239,
+      "all_cores_p90_ms": 43.3,
+      "one_core_mean_ms": 238.538
+    },
+    {
+      "bits": 24,
+      "expected_hashes": 16777216,
+      "trials": 12,
+      "all_cores_mean_ms": 80.864,
+      "all_cores_p90_ms": 151.077,
+      "one_core_mean_ms": 0
+    },
+    {
+      "bits": 26,
+      "expected_hashes": 67108864,
+      "trials": 6,
+      "all_cores_mean_ms": 429.127,
+      "all_cores_p90_ms": 635.862,
+      "one_core_mean_ms": 0
+    }
+  ],
+  "single_core_hashes_per_sec": 17991273,
+  "timestamp": "2026-10-07T18:55:29Z",
+  "verify_ns": 56
+}

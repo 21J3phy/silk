@@ -1,0 +1,87 @@
+{
+  "leaf_bytes": 41,
+  "note": "Append measured in 1000-leaf transactions on SQLite (synchronous=NORMAL). hash_chain_proof_bytes is what a simple hash chain would need to prove the same entry (all later links), for comparison.",
+  "points": [
+    {
+      "size": 10,
+      "append_us_each": 54,
+      "inclusion_proof_hashes": 4,
+      "inclusion_proof_bytes": 128,
+      "consistency_proof_bytes": 128,
+      "verify_inclusion_us": 0.44,
+      "prove_inclusion_us": 5.03,
+      "hash_chain_proof_bytes": 224
+    },
+    {
+      "size": 100,
+      "append_us_each": 5.1,
+      "inclusion_proof_hashes": 7,
+      "inclusion_proof_bytes": 224,
+      "consistency_proof_bytes": 256,
+      "verify_inclusion_us": 0.7,
+      "prove_inclusion_us": 8.49,
+      "hash_chain_proof_bytes": 2144
+    },
+    {
+      "size": 1000,
+      "append_us_each": 6.42,
+      "inclusion_proof_hashes": 10,
+      "inclusion_proof_bytes": 320,
+      "consistency_proof_bytes": 352,
+      "verify_inclusion_us": 0.95,
+      "prove_inclusion_us": 15.39,
+      "hash_chain_proof_bytes": 21344
+    },
+    {
+      "size": 10000,
+      "append_us_each": 5.44,
+      "inclusion_proof_hashes": 14,
+      "inclusion_proof_bytes": 448,
+      "consistency_proof_bytes": 480,
+      "verify_inclusion_us": 1.33,
+      "prove_inclusion_us": 20.64,
+      "hash_chain_proof_bytes": 213344
+    },
+    {
+      "size": 100000,
+      "append_us_each": 6.08,
+      "inclusion_proof_hashes": 17,
+      "inclusion_proof_bytes": 544,
+      "consistency_proof_bytes": 576,
+      "verify_inclusion_us": 1.61,
+      "prove_inclusion_us": 28.19,
+      "hash_chain_proof_bytes": 2133344
+    },
+    {
+      "size": 200000,
+      "append_us_each": 6.3,
+      "inclusion_proof_hashes": 18,
+      "inclusion_proof_bytes": 576,
+      "consistency_proof_bytes": 608,
+      "verify_inclusion_us": 1.68,
+      "prove_inclusion_us": 31.31,
+      "hash_chain_proof_bytes": 4266688
+    },
+    {
+      "size": 500000,
+      "append_us_each": 5.97,
+      "inclusion_proof_hashes": 19,
+      "inclusion_proof_bytes": 608,
+      "consistency_proof_bytes": 640,
+      "verify_inclusion_us": 1.79,
+      "prove_inclusion_us": 33.13,
+      "hash_chain_proof_bytes": 10666688
+    },
+    {
+      "size": 1000000,
+      "append_us_each": 6.13,
+      "inclusion_proof_hashes": 20,
+      "inclusion_proof_bytes": 640,
+      "consistency_proof_bytes": 672,
+      "verify_inclusion_us": 1.94,
+      "prove_inclusion_us": 35.17,
+      "hash_chain_proof_bytes": 21333344
+    }
+  ],
+  "timestamp": "2026-10-07T18:55:35Z"
+}

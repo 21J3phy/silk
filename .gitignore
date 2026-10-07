@@ -14,3 +14,10 @@ tests/browser-artifacts/
 .env
 .env.*
 !.env.example
+
+# Go build and profiling artifacts
+*.test
+*.prof
+/silk
+/silk-bench
+/dist/

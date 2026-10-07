@@ -143,8 +143,12 @@ func (c *Client) CheckReleaseVersion(ctx context.Context, releaseKeys []ed25519.
 	return &UpdateCheck{Current: current, Latest: rel.Version, Newer: CompareVersions(rel.Version, current) > 0, LedgerIdx: info.LedgerIdx, Manifest: &m}, nil
 }
 
-// Platform is this binary's manifest key.
-func Platform() string { return runtime.GOOS + "-" + runtime.GOARCH }
+// Flavor distinguishes builds in a release manifest: "" for the client build
+// that agents run, "relay-" for the full build that also runs a relay.
+var Flavor = ""
+
+// Platform is this binary's manifest key, e.g. "darwin-arm64" or "relay-linux-amd64".
+func Platform() string { return Flavor + runtime.GOOS + "-" + runtime.GOARCH }
 
 // ApplyUpdate downloads this platform's binary, checks size and SHA-256 against
 // the verified manifest, and atomically replaces exe.

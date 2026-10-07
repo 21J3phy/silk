@@ -4,8 +4,9 @@ A relay is one static binary. Businesses can run their own and point their agent
 
 ## Single machine (SQLite, recommended)
 
+The default `silk` download is the smaller client build. For a relay, use the full build: download `relay-<os>-<arch>` from `https://silk-relay.vercel.app/v2/release/manifest` (check its SHA-256), or build it with `go build ./cmd/silk`. The full build's `silk update` installs full builds.
+
 ```sh
-curl -fsSL https://silk-relay.vercel.app/install.sh | sh   # or build: go build ./cmd/silk
 silk relay --addr 0.0.0.0:8790 --db /var/lib/silk/relay.db --origin relay.example.com --trust-proxy
 ```
 

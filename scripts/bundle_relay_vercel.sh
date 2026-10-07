@@ -19,7 +19,7 @@ manifests = sorted((root / "releases").glob("*.json"), key=key)
 if not manifests:
     sys.exit("no published release in releases/; publish one before bundling")
 m = json.loads(manifests[-1].read_text())
-cases = "\n".join(f'    {plat}) url="{f["url"]}"; sum="{f["sha256"]}" ;;' for plat, f in sorted(m["files"].items()) if not plat.startswith("windows"))
+cases = "\n".join(f'    {plat}) url="{f["url"]}"; sum="{f["sha256"]}" ;;' for plat, f in sorted(m["files"].items()) if not plat.startswith(("windows", "relay-")))
 tmpl = (root / "deploy/vercel/install.sh").read_text()
 dest.write_text(tmpl.replace("__VERSION__", m["version"]).replace("__CASES__", cases))
 dest.chmod(0o755)

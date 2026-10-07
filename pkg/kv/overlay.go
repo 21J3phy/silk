@@ -30,6 +30,12 @@ type Overlay struct {
 	undo   []undoRec
 	active bool
 	keys   []string
+	// cache holds values read from the backend during this batch. It is valid
+	// because the batch holds the store's writer lock: nothing else can change
+	// those rows until commit. Writes (batch) always shadow it.
+	cache map[string][]byte
+	// topics published by kept updates; opTopics belong to the current update.
+	topics, opTopics []string
 }
 
 type undoRec struct {
@@ -47,15 +53,37 @@ func NewOverlay(base Base) *Overlay {
 func (o *Overlay) Reset(base Base) {
 	o.base = base
 	clear(o.batch)
+	clear(o.cache)
 	o.undo, o.active = o.undo[:0], false
 	o.keys = o.keys[:0]
+	o.topics, o.opTopics = o.topics[:0], o.opTopics[:0]
 }
 
 // Begin starts an isolated update layer.
-func (o *Overlay) Begin() { o.undo, o.active = o.undo[:0], true }
+func (o *Overlay) Begin() { o.undo, o.active, o.opTopics = o.undo[:0], true, o.opTopics[:0] }
 
 // Keep accepts the current update layer.
-func (o *Overlay) Keep() { o.undo, o.active = o.undo[:0], false }
+func (o *Overlay) Keep() {
+	o.undo, o.active = o.undo[:0], false
+	o.topics = append(o.topics, o.opTopics...)
+	o.opTopics = o.opTopics[:0]
+}
+
+// Notify records a topic to publish if the current update is kept.
+func (o *Overlay) Notify(topic string) { o.opTopics = append(o.opTopics, topic) }
+
+// Topics returns the distinct topics of kept updates.
+func (o *Overlay) Topics() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range o.topics {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 // Discard rolls back the current update layer.
 func (o *Overlay) Discard() {
@@ -68,6 +96,7 @@ func (o *Overlay) Discard() {
 		}
 	}
 	o.undo, o.active = o.undo[:0], false
+	o.opTopics = o.opTopics[:0]
 }
 
 // Writes returns the coalesced batch writes in key order.
@@ -108,7 +137,47 @@ func (o *Overlay) Get(key []byte) ([]byte, error) {
 		}
 		return e.val, nil
 	}
-	return o.base.Get(key)
+	if v, ok := o.cache[string(key)]; ok {
+		return v, nil
+	}
+	v, err := o.base.Get(key)
+	if err == nil {
+		o.remember(string(key), v)
+	}
+	return v, err
+}
+
+func (o *Overlay) remember(k string, v []byte) {
+	if o.cache == nil {
+		o.cache = make(map[string][]byte, 256)
+	}
+	o.cache[k] = v
+}
+
+// Prefetch reads keys from the backend in one round trip so that later Gets
+// in this batch are served from memory. Implements kv.Prefetcher.
+func (o *Overlay) Prefetch(keys [][]byte) error {
+	var miss [][]byte
+	for _, k := range keys {
+		if _, ok := o.lookup(string(k)); ok {
+			continue
+		}
+		if _, ok := o.cache[string(k)]; ok {
+			continue
+		}
+		miss = append(miss, k)
+	}
+	if len(miss) == 0 {
+		return nil
+	}
+	vals, err := o.base.GetMany(miss)
+	if err != nil {
+		return err
+	}
+	for i, k := range miss {
+		o.remember(string(k), vals[i])
+	}
+	return nil
 }
 
 func (o *Overlay) GetMany(keys [][]byte) ([][]byte, error) {
@@ -122,6 +191,10 @@ func (o *Overlay) GetMany(keys [][]byte) ([][]byte, error) {
 			}
 			continue
 		}
+		if v, ok := o.cache[string(k)]; ok {
+			out[i] = v
+			continue
+		}
 		miss = append(miss, k)
 		missIdx = append(missIdx, i)
 	}
@@ -132,6 +205,7 @@ func (o *Overlay) GetMany(keys [][]byte) ([][]byte, error) {
 		}
 		for j, v := range vals {
 			out[missIdx[j]] = v
+			o.remember(string(miss[j]), v)
 		}
 	}
 	return out, nil

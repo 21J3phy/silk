@@ -47,6 +47,10 @@ func main() {
 		err = ledgerBench(ctx, os.Args[2:])
 	case "crash":
 		err = crashTest(ctx, os.Args[2:])
+	case "pgrtt":
+		err = pgRoundTrips(ctx, os.Args[2:])
+	case "live":
+		err = liveBench(ctx, os.Args[2:])
 	case "load":
 		err = loadExisting(ctx, os.Args[2:])
 	case "memprobe":

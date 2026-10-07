@@ -5,12 +5,16 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/mod/sumdb/tlog"
+
+	"github.com/21J3phy/silk/pkg/kv/pgkv"
 
 	"github.com/21J3phy/silk/pkg/kv/sqlitekv"
 	"github.com/21J3phy/silk/pkg/ledger"
@@ -521,6 +525,91 @@ func TestLedgerProofsForEveryEntry(t *testing.T) {
 		}))
 		if err := ledger.VerifyConsistency(proof, cp.Size, cp.Root, old, oldRoot); err != nil {
 			t.Fatalf("consistency %d->%d: %v", old, cp.Size, err)
+		}
+	}
+}
+
+func TestNotifierCountsAndWakes(t *testing.T) {
+	f := newFixture(t, relay.Config{})
+	c := f.connect(600)
+	cur, _ := f.r.Inbox(f.ctx, c.y.id, 0, 100)
+	var cursor uint64
+	if len(cur) > 0 {
+		cursor = cur[len(cur)-1].Seq
+	}
+	done := make(chan []*relay.Event, 1)
+	go func() {
+		evs, _ := f.r.WaitInbox(f.ctx, c.y.id, cursor, 10, 5*time.Second)
+		done <- evs
+	}()
+	time.Sleep(50 * time.Millisecond)
+	start := time.Now()
+	if _, err := f.r.Submit(f.ctx, f.msg(c, "wake").Raw); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case evs := <-done:
+		if len(evs) != 1 {
+			t.Fatalf("got %d events", len(evs))
+		}
+		if d := time.Since(start); d > time.Second {
+			t.Fatalf("in-process wakeup took %v", d)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("waiter was not woken")
+	}
+}
+
+// TestCrossInstanceWake runs two relay instances over one PostgreSQL database
+// (as serverless functions do) and checks a waiter on one is woken promptly by
+// a write on the other, via LISTEN/NOTIFY rather than the backoff poll.
+func TestCrossInstanceWake(t *testing.T) {
+	dsn := os.Getenv("SILK_TEST_POSTGRES")
+	if dsn == "" {
+		t.Skip("set SILK_TEST_POSTGRES to a disposable database to run")
+	}
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Exec(ctx, "DROP TABLE IF EXISTS silk_kv")
+	conn.Close(ctx)
+	skey, _, _ := ledger.GenerateKey("x.relay")
+	signer, _ := ledger.NewSigner(skey)
+	var relays []*relay.Relay
+	for i := 0; i < 2; i++ {
+		store, err := pgkv.Open(ctx, dsn, pgkv.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		relays = append(relays, relay.New(store, signer, relay.Config{RegisterBits: 4, IntroBaseBits: 4, PollInterval: 4 * time.Second}, nil))
+	}
+	f := &fixture{t: t, r: relays[0], clk: &clock{t: time.Now()}, ctx: ctx}
+	c := f.connect(600)
+	for round := 0; round < 5; round++ {
+		cur, _ := relays[1].Inbox(ctx, c.y.id, 0, 1000)
+		var cursor uint64
+		if len(cur) > 0 {
+			cursor = cur[len(cur)-1].Seq
+		}
+		done := make(chan time.Time, 1)
+		go func() {
+			relays[1].WaitInbox(ctx, c.y.id, cursor, 10, 10*time.Second)
+			done <- time.Now()
+		}()
+		time.Sleep(300 * time.Millisecond) // past the first fast re-checks; only a push wakes it soon
+		f.clk.t = time.Now()
+		start := time.Now()
+		if _, err := relays[0].Submit(ctx, f.msg(c, "cross").Raw); err != nil {
+			t.Fatal(err)
+		}
+		end := <-done
+		if d := end.Sub(start); d > 400*time.Millisecond {
+			t.Fatalf("round %d: cross-instance wake took %v", round, d)
+		} else {
+			t.Logf("round %d: woken %v after the write started", round, d)
 		}
 	}
 }

@@ -23,6 +23,7 @@ import (
 const (
 	schema  = `CREATE TABLE IF NOT EXISTS silk_kv (k bytea PRIMARY KEY, v bytea NOT NULL)`
 	lockKey = 0x5117 // advisory lock id shared by all relay instances
+	channel = "silk_events"
 )
 
 // Options configures the store.
@@ -33,6 +34,7 @@ type Options struct {
 
 // Store is a PostgreSQL-backed kv.Store.
 type Store struct {
+	dsn      string
 	pool     *pgxpool.Pool
 	reqs     chan *request
 	stop     chan struct{}
@@ -43,6 +45,8 @@ type Store struct {
 	Batches atomic.Int64
 	Updates atomic.Int64
 	Rows    atomic.Int64
+	// RoundTrips counts database round trips made by writes and reads.
+	RoundTrips atomic.Int64
 }
 
 type request struct {
@@ -77,7 +81,7 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 		pool.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
-	s := &Store{pool: pool, reqs: make(chan *request, 1024), stop: make(chan struct{}), maxBatch: o.MaxBatch}
+	s := &Store{dsn: dsn, pool: pool, reqs: make(chan *request, 1024), stop: make(chan struct{}), maxBatch: o.MaxBatch}
 	s.wg.Add(1)
 	go s.writer()
 	return s, nil
@@ -147,13 +151,14 @@ func (s *Store) commit(batch []*request) {
 	b := &pgx.Batch{}
 	b.Queue("BEGIN")
 	b.Queue("SELECT pg_advisory_xact_lock($1)", int64(lockKey))
+	s.RoundTrips.Add(1)
 	if err := conn.SendBatch(ctx, b).Close(); err != nil {
 		conn.Conn().Close(ctx)
 		fail(err)
 		return
 	}
 	rollback := func() { conn.Exec(context.Background(), "ROLLBACK") }
-	base := &pgTx{ctx: ctx, q: conn}
+	base := &pgTx{ctx: ctx, q: conn, rt: &s.RoundTrips}
 	ov := kv.NewOverlay(base)
 	results := make([]error, len(batch))
 	kept := 0
@@ -199,7 +204,11 @@ func (s *Store) commit(batch []*request) {
 	if len(delK) > 0 {
 		wb.Queue(`DELETE FROM silk_kv WHERE k = ANY($1::bytea[])`, delK)
 	}
+	for _, t := range ov.Topics() {
+		wb.Queue("SELECT pg_notify($1, $2)", channel, t) // delivered only if the commit succeeds
+	}
 	wb.Queue("COMMIT")
+	s.RoundTrips.Add(1)
 	if err := conn.SendBatch(ctx, wb).Close(); err != nil {
 		rollback()
 		fail(err)
@@ -229,7 +238,7 @@ func (s *Store) View(ctx context.Context, fn func(kv.Tx) error) error {
 	if s.closed.Load() {
 		return kv.ErrClosed
 	}
-	t := &pgTx{ctx: ctx, q: s.pool, readOnly: true}
+	t := &pgTx{ctx: ctx, q: s.pool, readOnly: true, rt: &s.RoundTrips}
 	if err := safeRun(fn, t); err != nil {
 		return err
 	}
@@ -256,6 +265,13 @@ type pgTx struct {
 	q        querier
 	readOnly bool
 	err      error
+	rt       *atomic.Int64
+}
+
+func (t *pgTx) trip() {
+	if t.rt != nil {
+		t.rt.Add(1)
+	}
 }
 
 func (t *pgTx) fail(err error) error {
@@ -267,6 +283,7 @@ func (t *pgTx) fail(err error) error {
 
 func (t *pgTx) Get(key []byte) ([]byte, error) {
 	var v []byte
+	t.trip()
 	err := t.q.QueryRow(t.ctx, "SELECT v FROM silk_kv WHERE k = $1", key).Scan(&v)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -289,6 +306,7 @@ func (t *pgTx) GetMany(keys [][]byte) ([][]byte, error) {
 	for i, k := range keys {
 		pos[string(k)] = append(pos[string(k)], i)
 	}
+	t.trip()
 	rows, err := t.q.Query(t.ctx, "SELECT k, v FROM silk_kv WHERE k = ANY($1::bytea[])", keys)
 	if err != nil {
 		return nil, t.fail(err)
@@ -323,6 +341,7 @@ func (t *pgTx) Delete(key []byte) error {
 func (t *pgTx) Scan(start, end []byte, limit int, fn func(k, v []byte) bool) error {
 	var rows pgx.Rows
 	var err error
+	t.trip()
 	lim := any(nil)
 	if limit > 0 {
 		lim = limit
@@ -360,4 +379,39 @@ func (t *pgTx) Scan(start, end []byte, limit int, fn func(k, v []byte) bool) err
 		}
 	}
 	return nil
+}
+
+// Watch LISTENs for topics published by any instance until ctx ends. Callers
+// should only watch while someone is waiting: a held connection is cheap, but
+// a scale-to-zero database cannot suspend while it is in use.
+func (s *Store) Watch(ctx context.Context, fn func(topic string)) error {
+	cfg, err := pgx.ParseConfig(s.dsn)
+	if err != nil {
+		return err
+	}
+	cfg.RuntimeParams["application_name"] = "silk-relay-listen"
+	backoff := 100 * time.Millisecond
+	for ctx.Err() == nil {
+		conn, err := pgx.ConnectConfig(ctx, cfg)
+		if err == nil {
+			if _, err = conn.Exec(ctx, "LISTEN "+channel); err == nil {
+				backoff = 100 * time.Millisecond
+				fn("") // (re)connected: waiters should re-check, they may have missed events
+				for {
+					n, err := conn.WaitForNotification(ctx)
+					if err != nil {
+						break
+					}
+					fn(n.Payload)
+				}
+			}
+			conn.Close(context.Background())
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, 5*time.Second)
+	}
+	return ctx.Err()
 }

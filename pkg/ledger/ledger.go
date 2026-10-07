@@ -84,6 +84,9 @@ func reader(tx kv.Tx) tlog.HashReader {
 	})
 }
 
+// SizeKey is the storage key of the ledger size (for prefetching).
+func SizeKey() []byte { return stateKey }
+
 // Size returns the number of leaves.
 func Size(tx kv.Tx) (int64, error) {
 	v, err := tx.Get(stateKey)

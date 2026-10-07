@@ -114,6 +114,9 @@ func New(store kv.Store, signer *ledger.Signer, cfg Config, clock func() time.Ti
 	}
 	r := &Relay{store: store, signer: signer, cfg: cfg, now: clock, Version: "dev"}
 	r.notify.waiters = map[wire.ID]map[chan struct{}]struct{}{}
+	if w, ok := store.(kv.Watcher); ok {
+		r.notify.watcher = w
+	}
 	return r
 }
 
@@ -183,6 +186,7 @@ func (st *txState) push(agent wire.ID, ev *Event) error {
 	ev.Seq = seq
 	ev.Millis = st.now
 	st.notify = append(st.notify, agent)
+	kv.Notify(st.tx, agent.Hex()) // wake waiters on other instances when this commits
 	return st.tx.Put(kv.Key(bEvent, agent[:], kv.U64(seq)), ev.encode())
 }
 
@@ -1094,6 +1098,12 @@ func (r *Relay) submitMsg(ctx context.Context, frame []byte) (*Result, error) {
 	res := &Result{Kind: "msg", ID: id.String()}
 	err = r.update(ctx, func(st *txState) error {
 		msgKey := kv.Key(bMsg, id[:])
+		// One round trip for everything this admission reads (remote stores).
+		if err := kv.Prefetch(st.tx, msgKey, kv.Key(bGrantCtr, m.GrantID[:]), kv.Key(bAgentKey, sender[:]),
+			kv.Key(bSeq, m.GrantID[:], []byte{m.Dir}, kv.U32(m.Seq)), kv.Key(bStat, []byte("inbox."), recipient[:]),
+			kv.Key(bEventSeq, recipient[:]), ledger.SizeKey(), kv.Key(bStat, []byte("msgs")), kv.Key(bStat, []byte("msg_bytes"))); err != nil {
+			return err
+		}
 		if v, err := st.tx.Get(msgKey); err != nil {
 			return err
 		} else if v != nil {
@@ -1239,6 +1249,10 @@ func (r *Relay) submitAck(ctx context.Context, frame []byte) (*Result, error) {
 		return nil, errf(401, "invalid_signature", "ack signature does not verify for either grant party")
 	}
 	err = r.update(ctx, func(st *txState) error {
+		if err := kv.Prefetch(st.tx, kv.Key(bMsg, a.MsgID[:]), kv.Key(bAgentKey, verifiedFor[:]), ledger.SizeKey(),
+			kv.Key(bStat, []byte("acks")), kv.Key(bStat, []byte("inbox."), verifiedFor[:])); err != nil {
+			return err
+		}
 		v, err := st.tx.Get(kv.Key(bMsg, a.MsgID[:]))
 		if err != nil {
 			return err
@@ -1499,6 +1513,7 @@ func (r *Relay) Inbox(ctx context.Context, agent wire.ID, after uint64, limit in
 // WaitInbox long-polls for events after cursor, up to wait.
 func (r *Relay) WaitInbox(ctx context.Context, agent wire.ID, after uint64, limit int, wait time.Duration) ([]*Event, error) {
 	deadline := time.Now().Add(wait)
+	attempt := 0
 	for {
 		ch, cancel := r.notify.subscribe(agent)
 		evs, err := r.Inbox(ctx, agent, after, limit)
@@ -1511,7 +1526,11 @@ func (r *Relay) WaitInbox(ctx context.Context, agent wire.ID, after uint64, limi
 			cancel()
 			return nil, nil
 		}
-		poll := r.cfg.PollInterval
+		// Back off storage re-checks (250ms, 500ms, 1s, ... up to 3x PollInterval):
+		// in-process wakeups are instant; this fallback covers writers on other
+		// instances without keeping a scale-to-zero database awake.
+		poll := min(r.cfg.PollInterval/4<<min(attempt, 6), 3*r.cfg.PollInterval)
+		attempt++
 		if remaining < poll {
 			poll = remaining
 		}
@@ -1739,6 +1758,12 @@ func (r *Relay) AuthCert(ctx context.Context, id wire.ID) (*wire.Cert, error) {
 type notifier struct {
 	mu      sync.Mutex
 	waiters map[wire.ID]map[chan struct{}]struct{}
+	count   int
+	// Cross-instance wakeups: while count > 0 and the store is a kv.Watcher,
+	// one goroutine listens for topics committed by other instances.
+	watcher  kv.Watcher
+	stopWait context.CancelFunc
+	idle     *time.Timer
 }
 
 func (n *notifier) subscribe(id wire.ID) (chan struct{}, func()) {
@@ -1750,20 +1775,62 @@ func (n *notifier) subscribe(id wire.ID) (chan struct{}, func()) {
 		n.waiters[id] = set
 	}
 	set[ch] = struct{}{}
+	n.count++
+	n.startWatchLocked()
 	n.mu.Unlock()
 	return ch, func() {
 		n.mu.Lock()
 		if s := n.waiters[id]; s != nil {
-			if _, ok := s[ch]; ok {
+			if _, ok := s[ch]; ok { // not already fired
 				delete(s, ch)
 				close(ch)
+				n.count--
 			}
 			if len(s) == 0 {
 				delete(n.waiters, id)
 			}
 		}
+		n.stopWatchLaterLocked()
 		n.mu.Unlock()
 	}
+}
+
+func (n *notifier) startWatchLocked() {
+	if n.idle != nil {
+		n.idle.Stop()
+		n.idle = nil
+	}
+	if n.watcher == nil || n.stopWait != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	n.stopWait = cancel
+	go n.watcher.Watch(ctx, func(topic string) {
+		if topic == "" {
+			n.fireAll()
+			return
+		}
+		if id, err := wire.ParseID(topic); err == nil {
+			n.fire(id)
+		}
+	})
+}
+
+// stopWatchLaterLocked releases the listener a few seconds after the last waiter
+// leaves, so back-to-back long-polls reuse it and an idle database can suspend.
+func (n *notifier) stopWatchLaterLocked() {
+	if n.count > 0 || n.stopWait == nil || n.idle != nil {
+		return
+	}
+	n.idle = time.AfterFunc(10*time.Second, func() {
+		n.mu.Lock()
+		defer n.mu.Unlock()
+		if n.count == 0 && n.stopWait != nil {
+			n.stopWait()
+			n.stopWait = nil
+		}
+		n.idle = nil
+	})
 }
 
 func (n *notifier) fire(id wire.ID) {
@@ -1771,7 +1838,22 @@ func (n *notifier) fire(id wire.ID) {
 	for ch := range n.waiters[id] {
 		close(ch)
 	}
+	n.count -= len(n.waiters[id])
 	delete(n.waiters, id)
+	n.stopWatchLaterLocked()
+	n.mu.Unlock()
+}
+
+func (n *notifier) fireAll() {
+	n.mu.Lock()
+	for id, set := range n.waiters {
+		for ch := range set {
+			close(ch)
+		}
+		n.count -= len(set)
+		delete(n.waiters, id)
+	}
+	n.stopWatchLaterLocked()
 	n.mu.Unlock()
 }
 

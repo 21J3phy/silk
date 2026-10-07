@@ -32,6 +32,39 @@ type Store interface {
 	Close() error
 }
 
+// Prefetcher is implemented by write transactions that can load several keys
+// in one round trip ahead of use (a latency optimization for remote stores).
+type Prefetcher interface {
+	Prefetch(keys [][]byte) error
+}
+
+// Prefetch loads keys ahead of use when tx supports it; otherwise it is a no-op.
+func Prefetch(tx Tx, keys ...[]byte) error {
+	if p, ok := tx.(Prefetcher); ok {
+		return p.Prefetch(keys)
+	}
+	return nil
+}
+
+// Notifier is implemented by write transactions that can publish a topic to
+// other processes when (and only if) the transaction commits.
+type Notifier interface {
+	Notify(topic string)
+}
+
+// Notify publishes topic on commit when tx supports it; otherwise it is a no-op.
+func Notify(tx Tx, topic string) {
+	if n, ok := tx.(Notifier); ok {
+		n.Notify(topic)
+	}
+}
+
+// Watcher is implemented by stores shared between processes: Watch delivers
+// topics published by any process's committed transactions until ctx ends.
+type Watcher interface {
+	Watch(ctx context.Context, fn func(topic string)) error
+}
+
 // ErrClosed is returned after Close.
 var ErrClosed = errors.New("store closed")
 

@@ -162,7 +162,8 @@ type pair struct {
 
 func handshake(ctx context.Context, a *api, x, y *agent, budget uint32) (*pair, error) {
 	var info relay.AgentInfo
-	data, _, err := a.do(ctx, "GET", "/v2/agents/"+y.id.String()+"?from="+x.id.String(), nil, "")
+	lookup := "/v2/agents/" + y.id.String() + "?from=" + x.id.String()
+	data, _, err := a.do(ctx, "GET", lookup, nil, x.auth("GET", lookup))
 	if err != nil {
 		return nil, err
 	}

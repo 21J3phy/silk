@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -43,7 +44,7 @@ func runRelay(ctx context.Context, args []string) error {
 	relKeys := fs.String("release-keys", "", "comma-separated base64 Ed25519 keys allowed to publish releases to this relay's ledger")
 	trustProxy := fs.Bool("trust-proxy", false, "rate-limit by X-Forwarded-For")
 	noLimits := fs.Bool("no-ip-limits", false, "disable per-IP request limits (benchmarks)")
-	benchRate := fs.Bool("bench-unlimited-rate", false, "ignore per-conversation rate windows (benchmarks only)")
+	benchRate := fs.Bool("bench-unlimited-rate", false, "ignore per-conversation rate windows and backlog caps (benchmarks only)")
 	maxBatch := fs.Int("max-batch", 512, "max writes per group commit (1 disables grouping)")
 	debugAddr := fs.String("debug-addr", "", "serve Go pprof on this loopback address (diagnostics only)")
 	if err := fs.Parse(args); err != nil {
@@ -51,6 +52,10 @@ func runRelay(ctx context.Context, args []string) error {
 	}
 	if *keyFile == "" {
 		*keyFile = *db + ".ledger-key"
+	}
+	if os.Getenv("GOGC") == "" {
+		// Measured: peak memory under load −4–5% for ~7% more CPU (still ~10× below v1).
+		debug.SetGCPercent(50)
 	}
 	if os.Getenv("GOMAXPROCS") == "" {
 		// One writer goroutine owns the database; a few procs for TLS/HTTP/signature work
@@ -105,7 +110,7 @@ func runRelay(ctx context.Context, args []string) error {
 		}
 		rk = append(rk, ed25519.PublicKey(b))
 	}
-	r := relay.New(store, signer, relay.Config{RegisterBits: uint8(*regBits), IntroBaseBits: uint8(*introBits), PollInterval: 5 * time.Second, IgnoreGrantRate: *benchRate, ReleaseKeys: rk}, nil)
+	r := relay.New(store, signer, relay.Config{RegisterBits: uint8(*regBits), IntroBaseBits: uint8(*introBits), PollInterval: 5 * time.Second, IgnoreGrantRate: *benchRate, ReleaseKeys: rk, MaxPendingPerGrant: benchBacklog(*benchRate)}, nil)
 	r.Version = version
 	ho := relay.HTTPOptions{TrustProxy: *trustProxy}
 	if *noLimits {
@@ -141,4 +146,13 @@ func runRelay(ctx context.Context, args []string) error {
 		return err
 	}
 	return nil
+}
+
+// benchBacklog lifts the per-conversation backlog cap in benchmark mode, where
+// thousands of messages are sent through one conversation without acknowledgments.
+func benchBacklog(bench bool) uint32 {
+	if bench {
+		return 1 << 30
+	}
+	return 0 // default
 }

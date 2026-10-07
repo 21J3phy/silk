@@ -485,7 +485,7 @@ func compare(ctx context.Context, args []string) error {
 	}
 	res := &result{System: *system, Language: runtime.Version(), Machine: machine(), Timestamp: time.Now().UTC().Format(time.RFC3339),
 		LimitsOverridden: []string{
-			"relay --bench-unlimited-rate: per-conversation messages-per-minute window not enforced (protocol maximum is 600/min per direction); budget, sequence, signature, expiry, inbox-capacity checks all still run",
+			"relay --bench-unlimited-rate: per-conversation messages-per-minute window (protocol maximum 600/min per direction) and per-conversation backlog cap (1,000 unacknowledged) not enforced; budget, sequence, signature, expiry, inbox-capacity checks all still run",
 			"relay --no-ip-limits: per-IP token bucket (30 POST/s, 60 GET/s per address) disabled because all load comes from 127.0.0.1",
 			"relay --register-bits 8 --intro-bits 8: proof-of-work for untimed setup (registration, contact requests) lowered from 22/20 bits; message sends never require proof of work",
 		},

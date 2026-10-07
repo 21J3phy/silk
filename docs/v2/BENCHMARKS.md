@@ -4,7 +4,7 @@ Charts: [silk-relay.vercel.app/benchmarks](https://silk-relay.vercel.app/benchma
 
 ## Machine and method
 
-Apple M2 Pro (12 cores), macOS, the same desktop for every run, other processes not stopped (load average 5–15 during runs). All three systems ran as separate server processes over real localhost HTTP with the same methodology:
+Apple M2 Pro (12 cores), macOS, the same desktop for every run, other processes not stopped (load average about 5 for the final v2 run, 5–7 for v1). All three systems ran as separate server processes over real localhost HTTP with the same methodology:
 
 - Fresh server and empty database per concurrency level; 100 untimed warmup sends, then 2,000 timed closed-loop sends; requests built and signed before timing.
 - Roundtrip: send → recipient reads its inbox → recipient acknowledges, sequential over two keep-alive connections, 300 samples. v2 includes client-side encryption, decryption and signing inside the timing.
@@ -20,14 +20,14 @@ Reproduce: `bench/v1/run_all.sh` and `go run ./cmd/silk-bench compare --silk <st
 
 | | v1 local broker | v1 MCP mailbox | **v2** |
 |---|---|---|---|
-| Throughput, 1 / 4 / 16 / 64 clients (msg/s) | 341 / 529 / 492 / 560 | 308 / 495 / 463 / 460 | **2,810 / 6,332 / 8,351 / 10,774** |
-| p99 latency at 64 clients | 239 ms | 1,524 ms | **9.0 ms** |
-| Roundtrip p50 / p99 | 257 / 511 ms | 8.3 / 18.0 ms | **0.83 / 1.30 ms** |
-| Bytes per send / roundtrip | 1,936 / 5,880 | 1,581 / 5,073 | **631 / 1,930** |
-| Server CPU per message | 1.97 ms | 2.59 ms | **0.20 ms** |
-| Memory idle / peak | 33.3 / 38.4 MB | 62.1 / 80.0 MB | **23.4 / 37.9 MB** |
-| Cold start | 128 ms | 327 ms | **14 ms** |
-| Install | 11.7 MB + Python | 44.6 MB + Python | **11.4 MB single binary** |
+| Throughput, 1 / 4 / 16 / 64 clients (msg/s) | 341 / 529 / 492 / 560 | 308 / 495 / 463 / 460 | **2,941 / 5,885 / 7,825 / 9,492** |
+| p99 latency at 64 clients | 239 ms | 1,524 ms | **9.7 ms** |
+| Roundtrip p50 / p99 | 257 / 511 ms | 8.3 / 18.0 ms | **0.86 / 1.33 ms** |
+| Bytes per send / roundtrip | 1,936 / 5,880 | 1,581 / 5,073 | **631 / 1,931** |
+| Server CPU per message | 1.97 ms | 2.59 ms | **0.21 ms** |
+| Memory idle / peak | 33.3 / 38.4 MB | 62.1 / 80.0 MB | **23.9 / 36.0 MB** |
+| Cold start | 128 ms | 327 ms | **13 ms** |
+| Install | 11.7 MB + Python | 44.6 MB + Python | **7.1 MB client binary** (11.5 MB with relay) |
 | Errors at 64 clients | 12 connection resets | 0 | **0** |
 
 The v1 broker hands messages to recipients on a 500 ms background poll, which dominates its roundtrip. At 64 clients it reset connections (listen backlog 5), so it held fewer requests in flight; its peak memory is not directly comparable.
@@ -40,8 +40,10 @@ The v1 broker hands messages to recipients on a 500 ms background poll, which do
 | 2 | 8,071 | 0.28 ms | Profiling showed 36% of time writing savepoint sub-journal pages to disk. Replaced savepoints with an in-memory undo log; moved hot-path state out of large post-quantum key records (SQLite overflow pages) |
 | — | 994 | 0.38 ms | **Rejected:** bbolt engine. It flushes the disk cache on every commit on macOS and allocated 3.6 GB per 20,000 messages |
 | 3 | 9,835 | 0.18 ms | Low-level SQLite API with cached statements instead of `database/sql`; 4 OS threads instead of 12 (faster and lighter, since one goroutine owns the database) |
+| 4 | 7,825 | 0.21 ms | Security-review fixes (extra key checks, backlog counters) and GC target 50: peak memory 38.4 → 36.0 MB for ~7% more CPU, so v2 is lighter than v1 at every load level |
+| — | — | — | **Rejected:** 32 MB SQLite page cache. No throughput gain on a 375 MB database, +60 MB of memory |
 
-Allocations per message fell 58% across iterations 1→3. The final verification run (table above) was taken under heavier machine load than iteration 3.
+Allocations per message fell 58% across iterations 1→3. Agents run the client-only build (`silk mcp`): 11 MB resident vs 17 MB for the full build.
 
 ## Live hosted relay
 

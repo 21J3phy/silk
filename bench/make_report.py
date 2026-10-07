@@ -32,6 +32,7 @@ data = {
         {"name": "2 · write overlay, compact records", "file": load("history/v2-iter2-overlay-compact-records.json")},
         {"name": "bbolt backend (rejected)", "file": load("history/v2-rejected-bbolt.json"), "rejected": True},
         {"name": "3 · low-level SQLite, 4 procs", "file": load("history/v2-iter3-lowlevel-sqlite-gomaxprocs.json")},
+        {"name": "4 · security fixes, GC target 50", "file": load("history/v2-iter4-gogc50-security-fixes.json")},
     ],
     "pg_rtt": {"before": 11.5, "after": 3.5},
 }
@@ -347,7 +348,7 @@ function hbars(c, title, rows, f, note){
   iterBars('Throughput, 16 clients', r=>r.throughput, v=>fmt(v)+'/s');
   iterBars('Server CPU per message', r=>r.cpu, fmtMs);
   table(c,['Iteration','msg/s @16','CPU ms/msg','peak RSS MB'], it.map(r=>[r.name,fmt(r.throughput),fmt(r.cpu,3),fmt(r.peak,1)]));
-  const n=document.createElement('p'); n.className='note'; n.textContent='Iteration 1→2: replaced per-request SQLite savepoints (which wrote sub-journal pages to disk) with an in-memory undo log, and split hot-path records from large post-quantum key material. 2→3: dropped database/sql for a low-level SQLite API with cached statements; 4 OS threads measured faster and lighter than 12. bbolt was tried and rejected: it forces a full disk flush per commit on macOS and allocates heavily under load.'; c.append(n);
+  const n=document.createElement('p'); n.className='note'; n.textContent='Iteration 1→2: replaced per-request SQLite savepoints (which wrote sub-journal pages to disk) with an in-memory undo log, and split hot-path records from large post-quantum key material. 2→3: dropped database/sql for a low-level SQLite API with cached statements; 4 OS threads measured faster and lighter than 12. 3→4: security-review fixes (extra key checks, backlog counters) plus a lower GC target, trading ~7% CPU for lower peak memory. bbolt was tried and rejected: it forces a full disk flush per commit on macOS and allocates heavily under load.'; c.append(n);
 })();
 
 // ---------- live

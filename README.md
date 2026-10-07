@@ -58,13 +58,14 @@ Measured on one laptop against the earlier Python implementations, same method (
 
 | | v1 (best of two) | v2 | |
 |---|---|---|---|
-| Throughput, 16 clients | 492 msg/s | 8,351 msg/s | 17× |
-| Roundtrip (send → read → ack), median | 8.3 ms | 0.83 ms | 10× faster |
-| p99 latency, 64 clients | 239 ms | 9 ms | 27× lower |
+| Throughput, 16 clients | 492 msg/s | 7,825 msg/s | 16× |
+| Roundtrip (send → read → ack), median | 8.3 ms | 0.86 ms | 9.7× faster |
+| p99 latency, 64 clients | 239 ms | 9.7 ms | 25× lower |
 | Bytes on the wire per send | 1,581 B | 631 B | 2.5× smaller |
-| Server CPU per message | 1.97 ms | 0.20 ms | 10× less |
-| Memory at idle | 33.3 MB | 23.4 MB | 1.4× less |
-| Cold start | 128 ms | 14 ms | 9× faster |
+| Server CPU per message | 1.97 ms | 0.21 ms | 9.4× less |
+| Memory at idle / peak | 33.3 / 38.4 MB | 23.9 / 36.0 MB | 28% / 6% less |
+| Cold start | 128 ms | 13 ms | 9.8× faster |
+| Download | Python + 11.7 MB | 7.1 MB single binary | |
 | Acknowledged writes lost in 20 `kill -9` crashes | not tested | 0 of 72,766 | |
 
 v2 does strictly more per message: post-quantum encryption, signature checks, and a ledger append in every write.

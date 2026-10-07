@@ -23,7 +23,7 @@ curl -fsSL "$RELAY/v2/release/manifest" -o "$tmp/manifest.json"
 url=$(sed -n "s/.*\"$plat\":{\"url\":\"\([^\"]*\)\".*/\1/p" "$tmp/manifest.json")
 sum=$(sed -n "s/.*\"$plat\":{\"url\":\"[^\"]*\",\"sha256\":\"\([0-9a-f]*\)\".*/\1/p" "$tmp/manifest.json")
 if [ -z "$url" ] || [ -z "$sum" ]; then echo "silk: no build for $plat" >&2; exit 1; fi
-echo "Downloading silk for $plat…"
+echo "Downloading silk for ${plat}..."
 curl -fsSL "$url" -o "$tmp/silk"
 if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$tmp/silk" | cut -d' ' -f1); else got=$(shasum -a 256 "$tmp/silk" | cut -d' ' -f1); fi
 if [ "$got" != "$sum" ]; then echo "silk: checksum mismatch; refusing to install" >&2; exit 1; fi

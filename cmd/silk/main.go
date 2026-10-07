@@ -886,13 +886,24 @@ func publishRelease(ctx context.Context, args []string) error {
 	keyFile := fs.String("key", "", "file with the base64 Ed25519 release seed")
 	dir := fs.String("dir", "", "directory of binaries named silk-<os>-<arch>[.exe]")
 	base := fs.String("url-base", "", "public URL prefix where the binaries are hosted")
+	urlMap := fs.String("url-map", "", "JSON file mapping binary file names to their exact public URLs (overrides --url-base)")
 	relayURL := fs.String("relay", DefaultRelay, "relay to publish to")
 	notes := fs.String("notes", "", "release notes")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *ver == "" || *keyFile == "" || *dir == "" || !strings.HasPrefix(*base, "https://") {
-		return errors.New("--version, --key, --dir and an https --url-base are required")
+	urls := map[string]string{}
+	if *urlMap != "" {
+		b, err := os.ReadFile(*urlMap)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(b, &urls); err != nil {
+			return fmt.Errorf("url map: %w", err)
+		}
+	}
+	if *ver == "" || *keyFile == "" || *dir == "" || (!strings.HasPrefix(*base, "https://") && len(urls) == 0) {
+		return errors.New("--version, --key, --dir and an https --url-base or --url-map are required")
 	}
 	kb, err := os.ReadFile(*keyFile)
 	if err != nil {
@@ -919,7 +930,16 @@ func publishRelease(ctx context.Context, args []string) error {
 		}
 		sum := sha256.Sum256(data)
 		plat := strings.TrimSuffix(strings.TrimPrefix(name, "silk-"), ".exe")
-		m.Files[plat] = client.ManifestFile{URL: strings.TrimRight(*base, "/") + "/" + name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(data))}
+		u := strings.TrimRight(*base, "/") + "/" + name
+		if mapped, ok := urls[name]; ok {
+			u = mapped
+		} else if len(urls) > 0 {
+			return fmt.Errorf("no URL for %s in --url-map", name)
+		}
+		if !strings.HasPrefix(u, "https://") {
+			return fmt.Errorf("URL for %s must be https", name)
+		}
+		m.Files[plat] = client.ManifestFile{URL: u, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(data))}
 	}
 	if len(m.Files) == 0 {
 		return errors.New("no silk-<os>-<arch> binaries found")

@@ -81,12 +81,13 @@ Consent
 
 Messaging
   silk send <@handle|id|conversation> <text...> [--json] [--reply ID]
-  silk inbox [--wait SECONDS] [--all]           sync and show messages
+  silk inbox [--wait SECONDS] [--all] [--follow] sync and show messages (--follow streams them)
   silk ack <message-id> [received|handled|declined]
   silk status <message-id>                      delivery state of a sent message
 
 Verification
   silk audit                                    verify ledger checkpoint, consistency, inclusion
+  silk doctor                                   check setup: relay, clock, keys, ledger pin, MCP
 
 Agents & servers
   silk mcp                                      run the MCP server (stdio) for an AI agent
@@ -560,10 +561,17 @@ func run(ctx context.Context, cmd string, args []string) error {
 		fs := newFlags("inbox", g)
 		wait := fs.Int("wait", 0, "long-poll up to N seconds for new events")
 		all := fs.Bool("all", false, "include acknowledged messages")
+		follow := fs.Bool("follow", false, "keep running and print events as they arrive (Ctrl-C to stop)")
 		if _, err := parse(fs, args); err != nil {
 			return err
 		}
 		a, err := openAgent(g)
+		if err != nil {
+			return err
+		}
+		if *follow {
+			return followInbox(ctx, g, a)
+		}
 		if err != nil {
 			return err
 		}
@@ -786,6 +794,13 @@ func run(ctx context.Context, cmd string, args []string) error {
 		fmt.Fprintf(f, "%s %d %s\n", time.Now().UTC().Format(time.RFC3339), cp.Size, base64.StdEncoding.EncodeToString(cp.Root[:]))
 		fmt.Printf("Witnessed %s at size %d; consistent with the previous checkpoint.\n", cp.Origin, cp.Size)
 		return nil
+
+	case "doctor":
+		fs := newFlags("doctor", g)
+		if _, err := parse(fs, args); err != nil {
+			return err
+		}
+		return doctor(ctx, g)
 
 	case "self-verify":
 		fs := newFlags("self-verify", g)
@@ -1039,5 +1054,122 @@ func publishRelease(ctx context.Context, args []string) error {
 		}
 	}
 	fmt.Printf("Published silk %s: %d builds, ledger #%d.\n", *ver, len(m.Files), res.LedgerIdx)
+	return nil
+}
+
+// followInbox long-polls forever, printing events as they arrive.
+func followInbox(ctx context.Context, g *globals, a *client.Agent) error {
+	fmt.Fprintf(os.Stderr, "Listening as %s (Ctrl-C to stop)…\n", a.Address())
+	backoff := time.Second
+	for ctx.Err() == nil {
+		res, err := a.Sync(ctx, 25*time.Second)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			fmt.Fprintln(os.Stderr, "silk:", err, "(retrying)")
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(backoff):
+			}
+			backoff = min(backoff*2, 30*time.Second)
+			continue
+		}
+		backoff = time.Second
+		if g.json {
+			if len(res.Messages)+len(res.Intros)+len(res.Grants)+len(res.Receipts)+len(res.Declined)+len(res.Revoked) > 0 {
+				json.NewEncoder(os.Stdout).Encode(res)
+			}
+			continue
+		}
+		for _, gi := range res.Grants {
+			fmt.Printf("✓ %s approved your request — conversation %s\n", peerName(gi.Peer, gi.PeerHandle), gi.ID)
+		}
+		for _, in := range res.Intros {
+			fmt.Printf("? contact request %s from %s: %q — `silk accept %s`\n", in.ID, peerName(in.From, in.FromHandle), safeText(in.Note), in.ID)
+		}
+		for _, r := range res.Receipts {
+			fmt.Printf("↩ %s: %s (ledger #%d)\n", r.ID, r.Status, r.AckIdx)
+		}
+		for _, id := range res.Revoked {
+			fmt.Printf("⊘ conversation %s was revoked\n", id)
+		}
+		for _, m := range res.Messages {
+			if m.Error != "" {
+				fmt.Printf("%s  from %s  ERROR: %s\n", m.ID, peerName(m.From, m.FromHandle), m.Error)
+				continue
+			}
+			fmt.Printf("%s  from %s\n  %s\n", m.ID, peerName(m.From, m.FromHandle), strings.ReplaceAll(safeText(m.Body), "\n", "\n  "))
+		}
+	}
+	return nil
+}
+
+// doctor checks everything a working setup needs and says how to fix what is missing.
+func doctor(ctx context.Context, g *globals) error {
+	ok := true
+	check := func(pass bool, what, fix string) {
+		mark := "✓"
+		if !pass {
+			mark, ok = "✗", false
+		}
+		fmt.Printf("%s %s\n", mark, what)
+		if !pass && fix != "" {
+			fmt.Printf("    → %s\n", fix)
+		}
+	}
+	c, err := open(g)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("silk %s, home %s\n", version, g.home)
+	if c.Config.Relay == "" {
+		check(false, "relay configured", "run `silk init --label <name>`")
+		return nil
+	}
+	start := time.Now()
+	info, err := c.Info(ctx)
+	rtt := time.Since(start).Round(time.Millisecond)
+	check(err == nil, fmt.Sprintf("relay %s reachable (%v)", c.Config.Relay, rtt), "check your network or the relay URL")
+	if err != nil {
+		return nil
+	}
+	skew := time.Duration(info.TimeMs-time.Now().UnixMilli()) * time.Millisecond
+	check(skew < time.Minute && skew > -time.Minute, fmt.Sprintf("clock within a minute of the relay (%v)", skew.Round(time.Millisecond)), "sync your system clock; frames more than 5 minutes off are rejected")
+	check(c.Config.LedgerKey != "" && c.Config.LedgerKey == info.LedgerKey, "relay ledger key matches the pinned key", "the relay's signing key changed; do not proceed until you know why")
+	if chk, err := c.CheckRelease(ctx, pinnedReleaseKeys(), version); err == nil {
+		check(!chk.Newer, fmt.Sprintf("silk is up to date (latest %s)", chk.Latest), "run `silk update`")
+	}
+	agents, _ := c.Agents()
+	check(len(agents) > 0, fmt.Sprintf("%d local agent(s)", len(agents)), "run `silk init --label <name>`")
+	if b, err := os.ReadFile(filepath.Join(g.home, "owner.key")); err == nil {
+		var f struct {
+			KDF string `json:"kdf"`
+		}
+		json.Unmarshal(b, &f)
+		check(f.KDF != "none", "owner key is passphrase-protected", "agents with shell access could approve contacts themselves; recreate with `silk init --passphrase` in a new home if that matters to you")
+	}
+	for _, label := range agents {
+		g2 := *g
+		g2.agent = label
+		a, err := openAgent(&g2)
+		if err != nil {
+			check(false, "agent "+label+" loads", err.Error())
+			continue
+		}
+		_, _, lerr := a.Lookup(ctx, a.ID.String())
+		check(lerr == nil, fmt.Sprintf("agent %s (%s) registered and its keys match the relay", label, a.Address()), "if you restored an old home, run `silk rotate`")
+		ar, aerr := a.Audit(ctx)
+		if aerr == nil {
+			check(true, fmt.Sprintf("ledger verified for %s (size %d, %d own entries proven)", label, ar.Size, ar.Checked), "")
+		} else {
+			check(false, "ledger audit for "+label, aerr.Error())
+		}
+		fmt.Printf("    MCP: claude mcp add silk-%s -- silk mcp --agent %s\n", label, label)
+	}
+	if ok {
+		fmt.Println("All good.")
+	}
 	return nil
 }

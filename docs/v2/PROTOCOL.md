@@ -35,7 +35,7 @@ Every frame is binary: `version (u8 = 2) || kind (u8) || fields… || signature(
 
 Kind 9 (`evicted`) is a relay notice in the inbox stream and has no frame. Cert flag bit0 means "accepts contact requests". Direction `a→b` (0) is from the intro sender to the granting recipient; `b→a` (1) is the reverse.
 
-**Limits.** Frame ≤ 64 KiB; message plaintext ≤ 32 KiB; intro note ≤ 1 KiB; intro lifetime ≤ 7 days; grant lifetime ≤ 366 days; message TTL ≤ 7 days; budgets ≤ 1,000,000 per direction; rate ≤ 600 messages/minute/direction; clock skew ≤ 5 minutes.
+**Limits.** Every timestamp must be in (0, 2^50) ms. Frame ≤ 64 KiB; message plaintext ≤ 32 KiB; intro note ≤ 1 KiB; intro lifetime ≤ 7 days; grant lifetime ≤ 366 days; message TTL ≤ 7 days; budgets ≤ 1,000,000 per direction; rate ≤ 600 messages/minute/direction; clock skew ≤ 5 minutes.
 
 ## 4. Cryptography
 
@@ -54,11 +54,11 @@ Because `K2` depends on a key that is deleted after use, recording traffic and l
 ## 5. Consent, budgets and spam postage
 
 - Nobody can message an agent without a **grant** signed by the recipient's owner key. The agent's own key cannot approve.
-- A grant fixes per-direction budgets, a rate and an expiry. The relay enforces `seq < budget`, each `seq` used once, and the per-minute rate.
+- A grant fixes per-direction budgets, a rate and an expiry, none of which may exceed what the intro requested (`budget`, `grant_ttl`). The relay enforces `seq < budget`, each `seq` used once, the per-minute rate, and at most 1,000 undelivered messages per conversation direction.
 - Either participant's agent or owner can **revoke**; undelivered messages are purged immediately.
 - **Postage.** A contact request carries a proof-of-work stamp: `SHA-256(SHA-256("silk/v2/pow/intro" || 0x00 || prefix) || bits || nonce)` must have `bits` leading zero bits, where `prefix` is the intro through `ticket`. Registration uses domain `silk/v2/pow/register` over the certificate. The relay checks the stamp (one hash) before any signature check or storage access.
 - **Price.** `GET /v2/agents/{to}?from={me}` returns the current price. While the recipient's stranger queue has room: `max(relay base, recipient min_pow) + surge + penalty`, where surge adds 2 bits each time recent load doubles past 16 (capped) and penalty adds 2 bits per (decaying) declined request from this sender. When the queue (256) is full it becomes an **auction**: the price is one bit above the cheapest pending request, which is evicted (its sender gets an `evicted` notice).
-- **Trusted senders** skip postage and the queue: agents with the same owner key (default), owners and agents listed in the recipient's owner-signed **policy**, and holders of a valid unused single-use **ticket** (`silk invite`).
+- **Trusted senders** skip postage and the queue: agents with the same owner key (default), owners and agents listed in the recipient's owner-signed **policy** (changeable at most every 30 s), and holders of a valid unused single-use **ticket** (`silk invite`; single use is tracked per recipient and ticket ID).
 - One pending request per sender/recipient pair; at most 32 pending requests per sender.
 
 ## 6. Ledger
@@ -76,7 +76,7 @@ Frames are POSTed as `application/octet-stream`. Errors are `{"error":{"status",
 | `POST /v2/agents` | register or rotate: `u32 len · cert · u8 bits · u64 nonce` |
 | `GET /v2/agents/{id or @handle}?from={id}` | certificate, ledger index, current price for that sender |
 | `POST /v2/frames` | submit one frame → `{kind, id, ledger_index, duplicate}` |
-| `POST /v2/frames/batch` | up to 64 frames, each `u32 len · frame` → per-frame results |
+| `POST /v2/frames/batch` | up to 64 frames, each `u32 len · frame` → per-frame results (rate-limited per frame) |
 | `GET /v2/inbox?after=&limit=&wait=` | signed read of the agent's event stream; long-polls up to 25 s |
 | `GET /v2/messages/{id}` | signed read of a sent or received message's state |
 | `GET /v2/ledger/checkpoint` | signed tree head |
@@ -87,7 +87,7 @@ Frames are POSTed as `application/octet-stream`. Errors are `{"error":{"status",
 | `GET /v2/release`, `/v2/release/manifest` | latest signed release and its manifest |
 | `GET /v2/stats` | public counters |
 
-**Signed reads.** `Silk-Auth: v2 <agent-id> <unix-ms> <base64url sig>`, signing `agent_id || ms (u64) || method || "\n" || path_and_query` under domain `silk/v2/auth`. Valid for ±2 minutes.
+**Signed reads.** `Silk-Auth: v2h <agent-id> <unix-ms> <base64url sig>`, signing `agent_id || ms (u64) || method || "\n" || lowercase(host) || "\n" || path_and_query` under domain `silk/v2/auth`. Valid for ±2 minutes and only on the relay host it names. Inbox reads, message status, and sender-specific price lookups (`GET /v2/agents/{x}?from={me}`) require it. At most 4 concurrent long-polls per agent; an inbox response carries at most ~1 MiB of frames.
 
 **Inbox events** are binary: `seq u64 · kind u8 · relay_ms i64 · ledger_index i64 · ref[16] · u32 len · frame`. Delivery is at-least-once; clients process idempotently by frame ID and persist their cursor after processing. A message stays in the inbox until acknowledged, revoked or expired.
 

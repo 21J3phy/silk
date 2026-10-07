@@ -95,8 +95,9 @@ reject fixture-only references. References point to separately retained consent
 evidence; no owner emails, private conversations or raw consent documents belong
 in a message receipt.
 
-An approved admin provisioner must verify both actual owners before inserting a
-grant. It must acquire the `mailbox_limits` singleton FOR UPDATE **first**, then
+`silk_live.admin.MailboxAdmin` (CLI: `python -m silk_live.admin`) is that
+provisioner; see [self-hosting](SELF_HOSTING.md). The operator must still verify
+both actual owners before inserting a grant. It must acquire the `mailbox_limits` singleton FOR UPDATE **first**, then
 bindings/agents and pair rows consistently, before changing registration or
 consent state. Enforce the configured agent/binding/grant capacity too. Preserve
 these invariants:

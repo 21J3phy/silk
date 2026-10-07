@@ -4,6 +4,10 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -30,6 +34,7 @@ import (
 	"github.com/21J3phy/silk/pkg/ledger"
 	"github.com/21J3phy/silk/pkg/mcp"
 	"github.com/21J3phy/silk/pkg/relay"
+	"github.com/21J3phy/silk/pkg/wire"
 )
 
 // version is set at build time with -ldflags "-X main.version=..."
@@ -37,6 +42,24 @@ var version = "2.0.0-dev"
 
 // DefaultRelay is the public relay used when none is configured.
 var DefaultRelay = "https://silk-relay.vercel.app"
+
+// defaultLedgerKey pins the default relay's checkpoint signing key so that even
+// the first `silk init` cannot be pointed at an impostor ledger.
+const defaultLedgerKey = "silk-relay.vercel.app+031d237c+ATTDAINdtt1STMevKzsNDCvOAQ+Vm+N3uD8aa2KRHSn6"
+
+// releaseKeys may sign Silk releases. `silk update` installs only releases signed
+// by one of these keys AND proven to be on the relay's public ledger.
+var releaseKeys = []string{"6yNx4g71m+r/5TGYhrRLZyO12VlKwLhKw8cAVTmbJZI="}
+
+func pinnedReleaseKeys() []ed25519.PublicKey {
+	var out []ed25519.PublicKey
+	for _, k := range releaseKeys {
+		if b, err := base64.StdEncoding.DecodeString(k); err == nil && len(b) == ed25519.PublicKeySize {
+			out = append(out, ed25519.PublicKey(b))
+		}
+	}
+	return out
+}
 
 const usage = `silk — consent-first, end-to-end encrypted messaging between AI agents
 
@@ -68,6 +91,7 @@ Verification
 Agents & servers
   silk mcp                                      run the MCP server (stdio) for an AI agent
   silk relay [--addr :8790] [--db FILE]         run a relay
+  silk update [--check]                         install the latest signed, ledger-logged release
   silk version
 
 Global flags: --home DIR (default ~/.silk or $SILK_HOME), --agent LABEL, --json
@@ -192,6 +216,9 @@ func run(ctx context.Context, cmd string, args []string) error {
 		}
 		if *relayURL == "" && c.Config.Relay == "" {
 			*relayURL = DefaultRelay
+		}
+		if (*relayURL == DefaultRelay || (*relayURL == "" && c.Config.Relay == DefaultRelay)) && c.Config.LedgerKey == "" {
+			c.Config.LedgerKey = defaultLedgerKey
 		}
 		if *label == "" {
 			*label = "agent"
@@ -658,6 +685,79 @@ func run(ctx context.Context, cmd string, args []string) error {
 	case "relay":
 		return runRelay(ctx, args)
 
+	case "update":
+		fs := newFlags("update", g)
+		check := fs.Bool("check", false, "only report whether an update is available")
+		if _, err := parse(fs, args); err != nil {
+			return err
+		}
+		c, err := open(g)
+		if err != nil {
+			return err
+		}
+		if c.Config.Relay == "" {
+			c.Config.Relay = DefaultRelay
+		}
+		if c.Config.LedgerKey == "" && c.Config.Relay == DefaultRelay {
+			c.Config.LedgerKey = defaultLedgerKey
+		}
+		chk, err := c.CheckRelease(ctx, pinnedReleaseKeys(), version)
+		if err != nil {
+			return err
+		}
+		if !chk.Newer {
+			fmt.Printf("silk %s is current (latest release %s, ledger #%d).\n", version, chk.Latest, chk.LedgerIdx)
+			return nil
+		}
+		if *check {
+			fmt.Printf("Update available: %s → %s (signed release, ledger #%d). Run `silk update`.\n", version, chk.Latest, chk.LedgerIdx)
+			return nil
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if exe, err = filepath.EvalSymlinks(exe); err != nil {
+			return err
+		}
+		if err := c.ApplyUpdate(ctx, chk, exe); err != nil {
+			return err
+		}
+		fmt.Printf("Updated silk %s → %s. Signature, ledger inclusion (#%d) and SHA-256 verified.\n", version, chk.Latest, chk.LedgerIdx)
+		return nil
+
+	case "release-publish":
+		return publishRelease(ctx, args)
+
+	case "self-verify":
+		fs := newFlags("self-verify", g)
+		if _, err := parse(fs, args); err != nil {
+			return err
+		}
+		c, err := open(g)
+		if err != nil {
+			return err
+		}
+		if c.Config.Relay == "" {
+			c.Config.Relay = DefaultRelay
+		}
+		if c.Config.LedgerKey == "" && c.Config.Relay == DefaultRelay {
+			c.Config.LedgerKey = defaultLedgerKey
+		}
+		chk, err := c.CheckReleaseVersion(ctx, pinnedReleaseKeys(), version, version)
+		if err != nil {
+			return err
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if err := client.VerifyBinary(chk, exe); err != nil {
+			return err
+		}
+		fmt.Printf("silk %s (%s) verified: release signature, ledger inclusion #%d, SHA-256.\n", version, client.Platform(), chk.LedgerIdx)
+		return nil
+
 	case "ledger-keygen":
 		fs := flag.NewFlagSet("ledger-keygen", flag.ContinueOnError)
 		origin := fs.String("origin", "", "ledger origin, e.g. silk-relay.example.com/v2")
@@ -775,5 +875,69 @@ func runRelay(ctx context.Context, args []string) error {
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	return nil
+}
+
+// publishRelease signs a manifest for prebuilt binaries and records it on the
+// relay's ledger. Maintainer-only: needs the release signing key.
+func publishRelease(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("release-publish", flag.ContinueOnError)
+	ver := fs.String("version", "", "release version, e.g. 2.0.1")
+	keyFile := fs.String("key", "", "file with the base64 Ed25519 release seed")
+	dir := fs.String("dir", "", "directory of binaries named silk-<os>-<arch>[.exe]")
+	base := fs.String("url-base", "", "public URL prefix where the binaries are hosted")
+	relayURL := fs.String("relay", DefaultRelay, "relay to publish to")
+	notes := fs.String("notes", "", "release notes")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *ver == "" || *keyFile == "" || *dir == "" || !strings.HasPrefix(*base, "https://") {
+		return errors.New("--version, --key, --dir and an https --url-base are required")
+	}
+	kb, err := os.ReadFile(*keyFile)
+	if err != nil {
+		return err
+	}
+	seed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(kb)))
+	if err != nil || len(seed) != ed25519.SeedSize {
+		return errors.New("release key file must hold a base64 32-byte seed")
+	}
+	key := ed25519.NewKeyFromSeed(seed)
+	m := client.Manifest{Version: *ver, Protocol: relay.Protocol, Created: time.Now().UTC().Format(time.RFC3339), Notes: *notes, Files: map[string]client.ManifestFile{}}
+	entries, err := os.ReadDir(*dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, "silk-") || e.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(*dir, name))
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		plat := strings.TrimSuffix(strings.TrimPrefix(name, "silk-"), ".exe")
+		m.Files[plat] = client.ManifestFile{URL: strings.TrimRight(*base, "/") + "/" + name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(data))}
+	}
+	if len(m.Files) == 0 {
+		return errors.New("no silk-<os>-<arch> binaries found")
+	}
+	body, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	rel := &wire.Release{Version: *ver, Created: time.Now().UnixMilli(), Manifest: body}
+	rel.Sign(key)
+	c := &client.Client{Config: client.Config{Relay: *relayURL}, HTTP: &http.Client{Timeout: time.Minute}}
+	res, err := c.Submit(ctx, rel.Raw)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(*dir, "manifest.json"), body, 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("Published silk %s: %d builds, ledger #%d.\n", *ver, len(m.Files), res.LedgerIdx)
 	return nil
 }

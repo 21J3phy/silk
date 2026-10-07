@@ -29,6 +29,7 @@ const (
 	// KindEvicted is a relay notice (no frame): a pending contact request was outbid.
 	KindEvicted Kind = 9
 	KindTicket  Kind = 10
+	KindRelease Kind = 11
 )
 
 func (k Kind) String() string {
@@ -53,6 +54,8 @@ func (k Kind) String() string {
 		return "evicted"
 	case KindTicket:
 		return "ticket"
+	case KindRelease:
+		return "release"
 	}
 	return fmt.Sprintf("kind(%d)", uint8(k))
 }
@@ -96,6 +99,7 @@ const (
 	DomainRevoke    = "silk/v2/revoke"
 	DomainPolicy    = "silk/v2/policy"
 	DomainTicket    = "silk/v2/ticket"
+	DomainRelease   = "silk/v2/release"
 	DomainAuth      = "silk/v2/auth"
 )
 
@@ -972,4 +976,75 @@ func ParseInvite(s string) (*Ticket, error) {
 		return nil, fmt.Errorf("invite encoding: %w", err)
 	}
 	return DecodeTicket(raw)
+}
+
+// ---------------------------------------------------------------------------
+// Release: a signed software release manifest. Relays accept releases only
+// from configured release keys and append them to the ledger, so every update
+// a client installs is publicly logged (software transparency).
+
+const MaxManifest = 16 << 10
+
+type Release struct {
+	Version  string
+	Created  int64
+	Manifest []byte // UTF-8 JSON: files, URLs, SHA-256 digests
+	Signer   [PubLen]byte
+	Sig      [SigLen]byte
+	Raw      []byte
+}
+
+func (r *Release) body() []byte {
+	w := writer{b: make([]byte, 0, 64+len(r.Manifest))}
+	w.u8(Version)
+	w.u8(uint8(KindRelease))
+	w.str8(r.Version)
+	w.i64(r.Created)
+	w.bytes32(r.Manifest)
+	w.raw(r.Signer[:])
+	return w.b
+}
+
+func (r *Release) Sign(key ed25519.PrivateKey) []byte {
+	copy(r.Signer[:], key.Public().(ed25519.PublicKey))
+	body := r.body()
+	copy(r.Sig[:], signWith(key, DomainRelease, body))
+	r.Raw = append(body, r.Sig[:]...)
+	return r.Raw
+}
+
+func (r *Release) VerifySig() bool {
+	return Verify(r.Signer[:], DomainRelease, r.Raw[:len(r.Raw)-SigLen], r.Sig[:])
+}
+
+func validVersion(s string) bool {
+	if s == "" || len(s) > 32 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c == '.' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func DecodeRelease(b []byte) (*Release, error) {
+	if len(b) > MaxFrame {
+		return nil, fmt.Errorf("%w: release too large", ErrMalformed)
+	}
+	r := reader{b: b}
+	rel := &Release{}
+	r.header(KindRelease)
+	rel.Version = r.str8(1, 32, validVersion, "version")
+	rel.Created = r.i64()
+	rel.Manifest = r.bytes32(2, MaxManifest, "manifest")
+	r.fixed(rel.Signer[:])
+	r.fixed(rel.Sig[:])
+	if err := r.done(); err != nil {
+		return nil, err
+	}
+	rel.Raw = b
+	return rel, nil
 }

@@ -5,6 +5,8 @@ package handler
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -57,10 +59,17 @@ func setup() {
 		initErr = err
 		return
 	}
+	var releaseKeys []ed25519.PublicKey
+	for _, k := range strings.Split(os.Getenv("SILK_RELEASE_KEYS"), ",") {
+		if b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(k)); err == nil && len(b) == ed25519.PublicKeySize {
+			releaseKeys = append(releaseKeys, ed25519.PublicKey(b))
+		}
+	}
 	r := relay.New(store, signer, relay.Config{
 		RegisterBits:  envBits("SILK_REGISTER_BITS", 24),
 		IntroBaseBits: envBits("SILK_INTRO_BITS", 20),
 		PollInterval:  time.Second, // instances share the database, not memory
+		ReleaseKeys:   releaseKeys,
 	}, nil)
 	r.Version = Version
 	h = relay.Handler(r, relay.HTTPOptions{TrustProxy: true, MaxWait: 25 * time.Second})

@@ -8,6 +8,7 @@ package relay
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -47,6 +48,8 @@ type Config struct {
 	MaxPendingPerInbox      uint64        // hard cap on undelivered events per agent (default 50000)
 	PollInterval            time.Duration // long-poll storage re-check for multi-instance deployments (default 1s)
 	SweepEvery              time.Duration // expiry sweep cadence (default 30s)
+	// ReleaseKeys are the Ed25519 keys allowed to publish software releases.
+	ReleaseKeys []ed25519.PublicKey
 	// IgnoreGrantRate disables per-grant per-minute rate windows. Benchmarks only:
 	// throughput tests would otherwise measure the rate limiter, not the relay.
 	IgnoreGrantRate bool
@@ -313,6 +316,8 @@ func (r *Relay) Submit(ctx context.Context, frame []byte) (*Result, error) {
 		return r.submitRevoke(ctx, frame)
 	case wire.KindPolicy:
 		return r.submitPolicy(ctx, frame)
+	case wire.KindRelease:
+		return r.submitRelease(ctx, frame)
 	case wire.KindCert:
 		return nil, errf(400, "use_register", "certificates are submitted through registration")
 	}
@@ -1768,4 +1773,85 @@ func (n *notifier) fire(id wire.ID) {
 	}
 	delete(n.waiters, id)
 	n.mu.Unlock()
+}
+
+// ---------------------------------------------------------------------------
+// Releases (software transparency)
+
+func (r *Relay) submitRelease(ctx context.Context, frame []byte) (*Result, error) {
+	rel, err := wire.DecodeRelease(frame)
+	if err != nil {
+		return nil, malformed(err)
+	}
+	allowed := false
+	for _, k := range r.cfg.ReleaseKeys {
+		if bytes.Equal(k, rel.Signer[:]) {
+			allowed = true
+		}
+	}
+	if !allowed || !rel.VerifySig() {
+		return nil, errf(403, "not_release_key", "releases must be signed by a configured release key")
+	}
+	res := &Result{Kind: "release", ID: rel.Version}
+	err = r.update(ctx, func(st *txState) error {
+		vkey := kv.Key(bRelease, []byte("v:"+rel.Version))
+		if v, err := st.tx.Get(vkey); err != nil {
+			return err
+		} else if v != nil {
+			if bytes.Equal(v[8:], frame) {
+				res.LedgerIdx, res.Duplicate = int64(binary.BigEndian.Uint64(v)), true
+				return nil
+			}
+			return errf(409, "version_exists", "release %s was already published", rel.Version)
+		}
+		if v, err := st.tx.Get(kv.Key(bRelease, []byte("latest"))); err != nil {
+			return err
+		} else if v != nil {
+			old, err := wire.DecodeRelease(append([]byte{}, v[8:]...))
+			if err == nil && rel.Created <= old.Created {
+				return errf(409, "stale_release", "a newer release (%s) is already published", old.Version)
+			}
+		}
+		idx, err := st.ledger(wire.KindRelease, frame)
+		if err != nil {
+			return err
+		}
+		res.LedgerIdx = idx
+		val := append(kv.U64(uint64(idx)), frame...)
+		if err := st.tx.Put(vkey, val); err != nil {
+			return err
+		}
+		return st.tx.Put(kv.Key(bRelease, []byte("latest")), val)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// ReleaseInfo is a published release with its ledger position.
+type ReleaseInfo struct {
+	Frame     []byte `json:"frame"`
+	LedgerIdx int64  `json:"ledger_index"`
+}
+
+// LatestRelease returns the newest release, or version-specific one.
+func (r *Relay) LatestRelease(ctx context.Context, version string) (*ReleaseInfo, error) {
+	key := kv.Key(bRelease, []byte("latest"))
+	if version != "" {
+		key = kv.Key(bRelease, []byte("v:"+version))
+	}
+	var out *ReleaseInfo
+	err := r.store.View(ctx, func(tx kv.Tx) error {
+		v, err := tx.Get(key)
+		if err != nil {
+			return err
+		}
+		if len(v) < 9 {
+			return errf(404, "no_release", "no release published")
+		}
+		out = &ReleaseInfo{LedgerIdx: int64(binary.BigEndian.Uint64(v)), Frame: append([]byte{}, v[8:]...)}
+		return nil
+	})
+	return out, err
 }

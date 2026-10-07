@@ -8,7 +8,10 @@ version="${1:-$(git -C "$root" describe --tags --always --dirty 2>/dev/null || e
 rm -rf "$out"
 mkdir -p "$out/api"
 cp "$root/go.mod" "$root/go.sum" "$out/"
-cp "$root/deploy/vercel/vercel.json" "$out/"
+cp "$root/deploy/vercel/vercel.json" "$root/deploy/vercel/install.sh" "$out/"
+
+# Never upload local env files, agent tooling, or lockfiles written into the bundle by CLIs.
+printf '.env*\n*.test\n.agents/\n.claude/\nskills-lock.json\n' > "$out/.vercelignore"
 sed "s/const Version = \"dev\"/const Version = \"$version\"/" "$root/deploy/vercel/api/index.go" > "$out/api/index.go"
 for pkg in wire seal pow ledger kv kv/pgkv relay; do
   mkdir -p "$out/pkg/$pkg"

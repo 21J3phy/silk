@@ -70,6 +70,8 @@ func Handler(r *Relay, o HTTPOptions) http.Handler {
 	mux.HandleFunc("GET /v2/ledger/proof", h.public(h.proof))
 	mux.HandleFunc("GET /v2/ledger/consistency", h.public(h.consistency))
 	mux.HandleFunc("GET /v2/ledger/find", h.public(h.find))
+	mux.HandleFunc("GET /v2/release", h.public(h.release))
+	mux.HandleFunc("GET /v2/release/manifest", h.public(h.manifest))
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, errf(404, "not_found", "no route %s %s", req.Method, req.URL.Path))
 	})
@@ -603,4 +605,31 @@ func (l *limiter) allow(key string) bool {
 	}
 	b.tokens--
 	return true
+}
+
+func (h *httpAPI) release(w http.ResponseWriter, req *http.Request) {
+	info, err := h.r.LatestRelease(req.Context(), req.URL.Query().Get("version"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, info)
+}
+
+// manifest serves the latest release's manifest JSON for installers. Clients
+// that can, verify the signed frame from /v2/release instead.
+func (h *httpAPI) manifest(w http.ResponseWriter, req *http.Request) {
+	info, err := h.r.LatestRelease(req.Context(), "")
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	rel, err := wire.DecodeRelease(info.Frame)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	w.Write(rel.Manifest)
 }

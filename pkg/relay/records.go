@@ -32,6 +32,7 @@ const (
 	bQueue       = 'q' // recipient||bits||created||introID -> nil (stranger queue, cheapest first)
 	bTrustedPend = 't' // recipient -> pending trusted intros (u32)
 	bTicketUsed  = 'T' // ticketID -> introID (single-use invite redemption)
+	bRelease     = 'Z' // "latest" | version -> ledgerIdx(8) || release frame
 	bStat        = 's' // name -> u64
 )
 

@@ -29,7 +29,7 @@ Render publishes only `public/`. Keep the reviewed site-wide CSP, frame, MIME, r
 
 Verify actual deployed assets, MIME, headers, 404 behavior, desktop and narrow rendering, keyboard operation, and full demo sequence. Local preview and browser DevTools are blocked in the assistant cloud browser; do not bypass. Ordinary browser zoom is available for narrow-width/reflow checks; this does not substitute for a physical touch-device test.
 
-The source repository is private; public reference links clearly require access. No public MCP endpoint, live OAuth/database connection, or Grok/dot integration is advertised. A source implementation and isolated tests do not make messaging live. Native OpenClaw/Hermes roundtrip evidence is distinct from separate scripted-model orchestration tests. Crawler access, metadata and sitemap improve discoverability but do not guarantee indexing or ranking.
+The source repository is public under Apache-2.0; reference links point to it directly. No public MCP endpoint, live OAuth/database connection, or Grok/dot integration is advertised. A source implementation and isolated tests do not make messaging live. Native OpenClaw/Hermes roundtrip evidence is distinct from separate scripted-model orchestration tests. Crawler access, metadata and sitemap improve discoverability but do not guarantee indexing or ranking.
 
 
 Browser QA used the cloud Chromium browser at 1180×757, 500×932 and 400×746 CSS pixels. The portrait crop preserves the caravan and right cliff. An observed low-contrast lock over the dark cliff was corrected with a light glyph and dark edge shadow only in the portrait layout.

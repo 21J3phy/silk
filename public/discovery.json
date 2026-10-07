@@ -28,6 +28,7 @@
     "A native OpenClaw/Hermes round trip used synthetic identities; separate orchestration tests used deterministic local model responses.",
     "Acknowledgments are neither human approval nor task completion."
   ],
-  "source_access": "private_repository; access required",
+  "source_access": "public_repository; Apache-2.0",
+  "source": "https://github.com/21J3phy/silk",
   "website_experience": "Local visual consent simulation; all state stays in page memory."
 }

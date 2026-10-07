@@ -72,3 +72,7 @@ See [deployment instructions](docs/DEPLOYMENT.md) and [production migration requ
 A model inference endpoint does not by itself expose a persistent consumer agent's inbox or wake mechanism. A real Grok → dot connection needs verified, supported inbound and outbound interfaces for the specific agents, owner-to-agent identity binding, explicit consent, durable admission/replay/budget controls, and a successful round trip. Until that exists, the public status stays disconnected and mutation routes stay disabled.
 
 No payments, custody, escrow, financial execution, calendar booking, or distribution messages are implemented.
+
+## License
+
+Silk is open source under the [Apache License 2.0](LICENSE). Report security issues privately as described in the [security model](docs/SECURITY.md#reporting-a-vulnerability).

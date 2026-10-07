@@ -729,6 +729,46 @@ func run(ctx context.Context, cmd string, args []string) error {
 	case "release-publish":
 		return publishRelease(ctx, args)
 
+	case "witness":
+		fs := newFlags("witness", g)
+		dir := fs.String("dir", "ledger-witness", "directory holding the witnessed checkpoints")
+		relayURL := fs.String("relay", DefaultRelay, "relay to witness")
+		key := fs.String("ledger-key", "", "pinned ledger key (default: built-in key for the default relay)")
+		if _, err := parse(fs, args); err != nil {
+			return err
+		}
+		c := &client.Client{Config: client.Config{Relay: *relayURL, LedgerKey: *key}, HTTP: &http.Client{Timeout: time.Minute}}
+		if c.Config.LedgerKey == "" && *relayURL == DefaultRelay {
+			c.Config.LedgerKey = defaultLedgerKey
+		}
+		latest := filepath.Join(*dir, "latest.checkpoint")
+		prev, err := os.ReadFile(latest)
+		if errors.Is(err, os.ErrNotExist) {
+			prev, err = nil, nil
+		}
+		if err != nil {
+			return err
+		}
+		cp, err := c.Witness(ctx, prev)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(*dir, 0o755); err != nil {
+			return err
+		}
+		raw := cp.Raw
+		if err := os.WriteFile(latest, raw, 0o644); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(filepath.Join(*dir, "checkpoints.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		fmt.Fprintf(f, "%s %d %s\n", time.Now().UTC().Format(time.RFC3339), cp.Size, base64.StdEncoding.EncodeToString(cp.Root[:]))
+		fmt.Printf("Witnessed %s at size %d; consistent with the previous checkpoint.\n", cp.Origin, cp.Size)
+		return nil
+
 	case "self-verify":
 		fs := newFlags("self-verify", g)
 		if _, err := parse(fs, args); err != nil {
@@ -787,6 +827,8 @@ func runRelay(ctx context.Context, args []string) error {
 	introBits := fs.Uint("intro-bits", 20, "base proof-of-work bits for contact requests")
 	syncMode := fs.String("sync", "FULL", "SQLite synchronous mode: FULL or NORMAL")
 	backend := fs.String("store", "sqlite", "storage engine: sqlite (default) or bolt")
+	cacheMB := fs.Int("cache-mb", 4, "SQLite writer page cache in MB")
+	relKeys := fs.String("release-keys", "", "comma-separated base64 Ed25519 keys allowed to publish releases to this relay's ledger")
 	trustProxy := fs.Bool("trust-proxy", false, "rate-limit by X-Forwarded-For")
 	noLimits := fs.Bool("no-ip-limits", false, "disable per-IP request limits (benchmarks)")
 	benchRate := fs.Bool("bench-unlimited-rate", false, "ignore per-conversation rate windows (benchmarks only)")
@@ -832,7 +874,7 @@ func runRelay(ctx context.Context, args []string) error {
 	case "bolt":
 		store, err = boltkv.Open(*db, boltkv.Options{MaxBatch: *maxBatch})
 	case "sqlite":
-		store, err = sqlitekv.Open(*db, sqlitekv.SQLiteOptions{Synchronous: *syncMode, MaxBatch: *maxBatch})
+		store, err = sqlitekv.Open(*db, sqlitekv.SQLiteOptions{Synchronous: *syncMode, MaxBatch: *maxBatch, CacheMB: *cacheMB})
 	default:
 		err = fmt.Errorf("unknown store %q", *backend)
 	}
@@ -840,7 +882,18 @@ func runRelay(ctx context.Context, args []string) error {
 		return err
 	}
 	defer store.Close()
-	r := relay.New(store, signer, relay.Config{RegisterBits: uint8(*regBits), IntroBaseBits: uint8(*introBits), PollInterval: 5 * time.Second, IgnoreGrantRate: *benchRate}, nil)
+	var rk []ed25519.PublicKey
+	for _, k := range strings.Split(*relKeys, ",") {
+		if k = strings.TrimSpace(k); k == "" {
+			continue
+		}
+		b, err := base64.StdEncoding.DecodeString(k)
+		if err != nil || len(b) != ed25519.PublicKeySize {
+			return fmt.Errorf("invalid release key %q", k)
+		}
+		rk = append(rk, ed25519.PublicKey(b))
+	}
+	r := relay.New(store, signer, relay.Config{RegisterBits: uint8(*regBits), IntroBaseBits: uint8(*introBits), PollInterval: 5 * time.Second, IgnoreGrantRate: *benchRate, ReleaseKeys: rk}, nil)
 	r.Version = version
 	ho := relay.HTTPOptions{TrustProxy: *trustProxy}
 	if *noLimits {

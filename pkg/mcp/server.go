@@ -283,7 +283,7 @@ func (s *Server) call(ctx context.Context, name string, raw json.RawMessage) (ma
 				unread = append(unread, m)
 			}
 		}
-		var requests []map[string]any
+		requests := []map[string]any{}
 		for _, in := range snap.InIntros {
 			if in.Status == "pending" {
 				from := in.From
@@ -294,7 +294,7 @@ func (s *Server) call(ctx context.Context, name string, raw json.RawMessage) (ma
 					"requested_budget": in.Budget, "owner_must_run": "silk accept " + in.ID})
 			}
 		}
-		var receipts []map[string]any
+		receipts := []map[string]any{}
 		for _, r := range res.Receipts {
 			receipts = append(receipts, map[string]any{"message_id": r.ID, "outcome": r.Status, "ledger_index": r.AckIdx})
 		}
@@ -373,7 +373,7 @@ func (s *Server) call(ctx context.Context, name string, raw json.RawMessage) (ma
 		if err != nil {
 			return nil, err
 		}
-		var convs []map[string]any
+		convs := []map[string]any{}
 		for _, g := range snap.Grants {
 			peer := g.Peer
 			if g.PeerHandle != "" {
@@ -382,7 +382,7 @@ func (s *Server) call(ctx context.Context, name string, raw json.RawMessage) (ma
 			convs = append(convs, map[string]any{"conversation": g.ID, "peer": peer, "status": g.Status, "scope": g.Scope,
 				"send_budget": g.SendBudget, "received": g.Received, "expires": time.UnixMilli(g.ExpiresMs).UTC().Format(time.RFC3339)})
 		}
-		var outgoing []map[string]any
+		outgoing := []map[string]any{}
 		for _, o := range snap.OutIntros {
 			outgoing = append(outgoing, map[string]any{"request_id": o.ID, "to": o.To, "status": o.Status})
 		}

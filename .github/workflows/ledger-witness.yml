@@ -1,0 +1,45 @@
+# Independently records the public relay's signed ledger checkpoints and proves
+# each one extends the last. A relay that rewrote history would fail this job,
+# and the git history of the ledger-witness branch is a public record anyone can
+# compare their own checkpoints against.
+name: ledger witness
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: ledger-witness
+jobs:
+  witness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: src
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - name: Build silk
+        run: go build -C src -o "$RUNNER_TEMP/silk" ./cmd/silk
+      - name: Check out the witness branch
+        run: |
+          if git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}.git" ledger-witness >/dev/null; then
+            git clone --depth 1 --branch ledger-witness "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" witness
+          else
+            mkdir witness && cd witness && git init -b ledger-witness && git remote add origin "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+      - name: Witness
+        run: "$RUNNER_TEMP/silk" witness --dir witness/silk-relay.vercel.app
+      - name: Commit
+        working-directory: witness
+        run: |
+          git config user.name "ledger-witness"
+          git config user.email "ledger-witness@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Witness $(tail -1 silk-relay.vercel.app/checkpoints.log | cut -d' ' -f2) entries"
+          git push origin ledger-witness

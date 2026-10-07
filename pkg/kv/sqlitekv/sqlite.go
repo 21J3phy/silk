@@ -54,6 +54,9 @@ type SQLiteOptions struct {
 	MaxBatch int
 	// Readers is the read connection pool size (default 4).
 	Readers int
+	// CacheMB is the writer's page cache (default 4). Larger caches trade
+	// memory for throughput once the database outgrows the cache.
+	CacheMB int
 }
 
 const schema = `CREATE TABLE IF NOT EXISTS kv (k BLOB PRIMARY KEY, v BLOB NOT NULL) WITHOUT ROWID`
@@ -81,12 +84,15 @@ func Open(path string, o SQLiteOptions) (*SQLite, error) {
 	if o.Readers <= 0 {
 		o.Readers = 4
 	}
+	if o.CacheMB <= 0 {
+		o.CacheMB = 4
+	}
 	w, err := sqlite.OpenConn(path, sqlite.OpenReadWrite|sqlite.OpenCreate|sqlite.OpenNoMutex)
 	if err != nil {
 		return nil, err
 	}
 	w.SetBusyTimeout(10 * time.Second)
-	if err := pragmas(w, "journal_mode=WAL", "synchronous="+o.Synchronous, "temp_store=MEMORY", "cache_size=-4000"); err != nil {
+	if err := pragmas(w, "journal_mode=WAL", "synchronous="+o.Synchronous, "temp_store=MEMORY", fmt.Sprintf("cache_size=-%d", o.CacheMB*1000)); err != nil {
 		w.Close()
 		return nil, err
 	}

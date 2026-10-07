@@ -210,3 +210,47 @@ func VerifyBinary(chk *UpdateCheck, exe string) error {
 	}
 	return nil
 }
+
+// Witness fetches the relay's signed checkpoint, verifies it against the
+// pinned ledger key, and proves it is consistent with prevRaw (the last
+// checkpoint this witness recorded, or nil). It returns the new checkpoint.
+// Any relay that rewrites history it already showed this witness fails here.
+func (c *Client) Witness(ctx context.Context, prevRaw []byte) (*ledger.Checkpoint, error) {
+	if c.Config.LedgerKey == "" {
+		return nil, errors.New("no pinned ledger key")
+	}
+	raw, _, err := c.do(ctx, "GET", "/v2/ledger/checkpoint", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	cp, err := ledger.OpenCheckpoint(raw, c.Config.LedgerKey)
+	if err != nil {
+		return nil, err
+	}
+	if prevRaw == nil {
+		return cp, nil
+	}
+	prev, err := ledger.OpenCheckpoint(prevRaw, c.Config.LedgerKey)
+	if err != nil {
+		return nil, fmt.Errorf("previous checkpoint: %w", err)
+	}
+	switch {
+	case prev.Size > cp.Size:
+		return cp, fmt.Errorf("%w (shrank from %d to %d)", ErrLedgerFork, prev.Size, cp.Size)
+	case prev.Size == cp.Size:
+		if prev.Root != cp.Root {
+			return cp, fmt.Errorf("%w (two roots for size %d)", ErrLedgerFork, cp.Size)
+		}
+		return cp, nil
+	case prev.Size == 0:
+		return cp, nil
+	}
+	var p relay.Proof
+	if err := c.getJSON(ctx, fmt.Sprintf("/v2/ledger/consistency?old=%d&size=%d", prev.Size, cp.Size), nil, &p); err != nil {
+		return cp, err
+	}
+	if err := ledger.VerifyConsistency(toTreeProof(p.Hashes), cp.Size, cp.Root, prev.Size, prev.Root); err != nil {
+		return cp, fmt.Errorf("%w: %v", ErrLedgerFork, err)
+	}
+	return cp, nil
+}

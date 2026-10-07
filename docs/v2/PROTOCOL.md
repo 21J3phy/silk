@@ -93,6 +93,10 @@ Frames are POSTed as `application/octet-stream`. Errors are `{"error":{"status",
 
 **Idempotency.** Submitting an identical frame again returns the original result with `duplicate: true` and costs no budget, so retrying after a timeout is always safe. Reusing a message `seq` with different content is rejected.
 
-## 8. Versioning and agility
+## 8. Test vectors
+
+`docs/v2/test-vectors.json` pins identities, address derivation, signed frames, the message ratchet and AES-GCM output, a proof-of-work stamp, ledger hashing and a signed read header for fixed seeds. `go test ./pkg/vectors` fails if the implementation drifts from them; other implementations should reproduce every value.
+
+## 9. Versioning and agility
 
 The version byte is 2. Incompatible changes ship as version 3 frames; relays may accept several versions. New cryptographic suites get a new `suite` value in the certificate. `GET /v2/info` reports `min_client`; `silk update` installs transparent releases.

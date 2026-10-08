@@ -151,13 +151,13 @@ func (ag *agent) auth(method, path string) string {
 
 // pair is an established conversation with both sides' ratchets in memory.
 type pair struct {
-	a, b       *agent
-	grant      wire.ID
-	sessA      *seal.Session
-	sessB      *seal.Session
-	budget     uint32
-	cursorB    uint64
-	cursorA    uint64
+	a, b    *agent
+	grant   wire.ID
+	sessA   *seal.Session
+	sessB   *seal.Session
+	budget  uint32
+	cursorB uint64
+	cursorA uint64
 }
 
 func handshake(ctx context.Context, a *api, x, y *agent, budget uint32) (*pair, error) {

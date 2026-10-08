@@ -485,10 +485,10 @@ func run(ctx context.Context, cmd string, args []string) error {
 		}
 		out(g, snap.Grants, func(w io.Writer) {
 			tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "CONVERSATION\tPEER\tSTATUS\tSEND BUDGET\tRECEIVED\tEXPIRES")
+			fmt.Fprintln(tw, "CONVERSATION\tPEER\tSTATUS\tSEND BUDGET\tRECEIVED\tKEY TURNS\tEXPIRES")
 			for _, gi := range snap.Grants {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\n", gi.ID, peerName(gi.Peer, gi.PeerHandle), gi.Status, gi.SendBudget, gi.Received,
-					time.UnixMilli(gi.ExpiresMs).Format("2006-01-02"))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%s\n", gi.ID, peerName(gi.Peer, gi.PeerHandle), gi.Status, gi.SendBudget, gi.Received,
+					gi.KeyTurns, time.UnixMilli(gi.ExpiresMs).Format("2006-01-02"))
 			}
 			tw.Flush()
 		})

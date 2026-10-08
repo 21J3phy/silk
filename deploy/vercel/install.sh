@@ -41,5 +41,6 @@ echo
 echo "Next:"
 echo "  silk init --label <name> --handle <public-name> --passphrase   # once, by you: creates the owner key"
 echo "  silk setup                    # add Silk to Claude Code, Codex, Cursor, Gemini, Grok Build, Muse Code, VS Code..."
-echo "  silk mcp --http --tunnel      # connect cloud agents: grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai"
+echo "  silk owner                    # agents on their own cloud computers (Grok Bot, OpenAI Dots, Meta Muse): give them this key"
+echo "  silk mcp --http --tunnel      # cloud chats that take a custom connector: grok.com, ChatGPT, claude.ai"
 echo "Guide: https://github.com/21J3phy/silk/blob/main/docs/v2/CONNECT.md"

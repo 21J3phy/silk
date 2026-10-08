@@ -26,6 +26,11 @@ dest.chmod(0o755)
 PY
 mkdir -p "$out/benchmarks"
 python3 "$root/bench/make_report.py" >/dev/null && cp "$root/bench/report.html" "$out/benchmarks/index.html"
+# Privacy notice and security contact (RFC 9116) for the hosted relay.
+cp "$root/docs/v2/PRIVACY.md" "$out/privacy.txt"
+mkdir -p "$out/.well-known"
+expires=$(date -u -v+180d +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -d '+180 days' +%Y-%m-%dT00:00:00Z)
+printf 'Contact: https://github.com/21J3phy/silk/security/advisories/new\nExpires: %s\nPreferred-Languages: en\nPolicy: https://github.com/21J3phy/silk/blob/main/docs/v2/SECURITY.md\nCanonical: https://silk-relay.vercel.app/.well-known/security.txt\n' "$expires" > "$out/.well-known/security.txt"
 mkdir -p "$out/compare"
 python3 "$root/bench/make_compare.py" >/dev/null && cp "$root/bench/compare.html" "$out/compare/index.html"
 

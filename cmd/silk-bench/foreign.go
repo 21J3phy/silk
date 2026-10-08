@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -445,4 +446,163 @@ func foreign(ctx context.Context, args []string) error {
 		return err
 	}
 	return os.WriteFile(*outPath, append(b, '\n'), 0o644)
+}
+
+// external runs a system whose client logic must run in its own driver
+// program (for example a library-only end-to-end encryption client): the
+// server is launched and sampled exactly as in `foreign`, and the driver
+// reports send latencies and throughput as JSON ({"level": {...},
+// "roundtrip_pct": {...}} with silk-bench's keys).
+func external(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("external", flag.ExitOnError)
+	specPath := fs.String("spec", "", "path to spec.json (launch, health, install_paths)")
+	driver := fs.String("driver", "", "driver command; {URL} {N} {C} {WARMUP} {RT} {RTWARM} are substituted")
+	outPath := fs.String("out", "", "result file")
+	n := fs.Int("requests", 2000, "timed requests per level")
+	warm := fs.Int("warmup", 100, "untimed warmup requests per level")
+	samples := fs.Int("samples", 300, "roundtrip samples")
+	levels := fs.String("levels", "1,4,16,64", "client concurrency levels")
+	fs.Parse(args)
+	raw, err := os.ReadFile(*specPath)
+	if err != nil {
+		return err
+	}
+	var sp foreignSpec
+	if err := json.Unmarshal(raw, &sp); err != nil {
+		return err
+	}
+	type driverOut struct {
+		Level     throughputLevel `json:"level"`
+		Roundtrip pct             `json:"roundtrip_pct"`
+	}
+	runDriver := func(url string, c, n, warmup, rt, rtWarm int) (*driverOut, error) {
+		vars := map[string]string{"URL": url, "N": strconv.Itoa(n), "C": strconv.Itoa(c), "WARMUP": strconv.Itoa(warmup),
+			"RT": strconv.Itoa(rt), "RTWARM": strconv.Itoa(rtWarm)}
+		argv := strings.Fields(subst(*driver, vars))
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Dir = os.TempDir()
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return nil, fmt.Errorf("driver: %v: %s", err, truncate([]byte(stderr.String()), 2000))
+		}
+		var d driverOut
+		if err := json.Unmarshal(out, &d); err != nil {
+			return nil, fmt.Errorf("driver output: %v: %s", err, truncate(out, 500))
+		}
+		return &d, nil
+	}
+	res := &result{System: sp.System, Language: sp.Language, Machine: machine(), Timestamp: time.Now().UTC().Format(time.RFC3339),
+		WireBytes: map[string]int64{}, RSSMB: map[string]float64{}, Extra: map[string]any{"version": sp.Version, "driver": *driver}}
+	var idle []float64
+	peak := 0.0
+	for _, ls := range strings.Split(*levels, ",") {
+		c, _ := strconv.Atoi(ls)
+		port := strings.Split(freePort(), ":")[1]
+		srv, _, err := sp.start(port)
+		if err != nil {
+			return err
+		}
+		time.Sleep(time.Second)
+		idleRSS, cpu0, _ := procStat(srv.cmd.Process.Pid)
+		mon := monitor(srv.cmd.Process.Pid)
+		d, err := runDriver(srv.base, c, *n, *warm, 1, 0)
+		_, cpu1, _ := procStat(srv.cmd.Process.Pid)
+		pk := mon.finish()
+		srv.stop()
+		if err != nil {
+			return fmt.Errorf("level %d: %w", c, err)
+		}
+		// Server CPU covers setup, warmup and the timed sends; scale to the timed share.
+		cpuMs := (cpu1 - cpu0) * 1000 / float64(*n+*warm)
+		fmt.Fprintf(os.Stderr, "%s c=%-3d %8.1f msg/s  p50 %.2fms  p99 %.2fms  errors %d  peak %.1fMB  cpu %.3fms/msg\n",
+			sp.System, c, d.Level.MsgsPerSec, d.Level.P50, d.Level.P99, d.Level.Errors, pk, cpuMs)
+		res.SendThroughput = append(res.SendThroughput, d.Level)
+		idle = append(idle, idleRSS)
+		peak = math.Max(peak, pk)
+		if c == 16 {
+			res.CPUMsPerMsg = math.Round(cpuMs*1000) / 1000
+		}
+	}
+	sort.Float64s(idle)
+	res.RSSMB["idle"] = math.Round(quantile(idle, .5)*10) / 10
+	res.RSSMB["peak"] = math.Round(peak*10) / 10
+	port := strings.Split(freePort(), ":")[1]
+	srv, _, err := sp.start(port)
+	if err != nil {
+		return err
+	}
+	// Route the roundtrip run through a byte-counting proxy: every byte both
+	// clients exchange with the server, divided by messages delivered.
+	proxy, total, err := countingProxy("127.0.0.1:" + port)
+	if err != nil {
+		srv.stop()
+		return err
+	}
+	d, err := runDriver("http://"+proxy, 1, 1, 0, *samples, 10)
+	srv.stop()
+	if err != nil {
+		return fmt.Errorf("roundtrip: %w", err)
+	}
+	res.RoundtripMs = d.Roundtrip
+	res.WireBytes["roundtrip"] = total.Load() / int64(*samples+10+1)
+	var colds []float64
+	for range 5 {
+		srv, dur, err := sp.start(strings.Split(freePort(), ":")[1])
+		if err != nil {
+			return err
+		}
+		srv.stop()
+		colds = append(colds, float64(dur.Microseconds())/1000)
+	}
+	sort.Float64s(colds)
+	res.ColdStartMs = math.Round(quantile(colds, .5)*10) / 10
+	res.Extra["cold_start_runs_ms"] = colds
+	res.InstallMB = duMB(sp.InstallPaths)
+	res.Notes = []string{sp.Notes, "Server launched and sampled exactly as in silk-bench foreign; sends driven by the system's own client library (" + *driver + ")."}
+	b, _ := json.MarshalIndent(res, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(*outPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(*outPath, append(b, '\n'), 0o644)
+}
+
+// countingProxy forwards TCP connections to target and counts bytes both ways.
+func countingProxy(target string) (string, *atomic.Int64, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", nil, err
+	}
+	total := &atomic.Int64{}
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				up, err := net.Dial("tcp", target)
+				if err != nil {
+					return
+				}
+				defer up.Close()
+				done := make(chan struct{}, 2)
+				pipe := func(dst, src net.Conn) {
+					n, _ := io.Copy(dst, src)
+					total.Add(n)
+					if tc, ok := dst.(*net.TCPConn); ok {
+						tc.CloseWrite()
+					}
+					done <- struct{}{}
+				}
+				go pipe(up, c)
+				go pipe(c, up)
+				<-done
+				<-done
+			}()
+		}
+	}()
+	return l.Addr().String(), total, nil
 }

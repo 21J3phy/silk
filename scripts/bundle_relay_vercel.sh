@@ -26,6 +26,8 @@ dest.chmod(0o755)
 PY
 mkdir -p "$out/benchmarks"
 python3 "$root/bench/make_report.py" >/dev/null && cp "$root/bench/report.html" "$out/benchmarks/index.html"
+mkdir -p "$out/compare"
+python3 "$root/bench/make_compare.py" >/dev/null && cp "$root/bench/compare.html" "$out/compare/index.html"
 
 # Never upload local env files, agent tooling, or lockfiles written into the bundle by CLIs.
 printf '.env*\n*.test\n.agents/\n.claude/\nskills-lock.json\n' > "$out/.vercelignore"

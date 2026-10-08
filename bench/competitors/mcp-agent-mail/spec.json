@@ -1,0 +1,107 @@
+{
+  "system": "MCP Agent Mail (Dicklesworthstone/mcp_agent_mail)",
+  "version": "git 3fad5ec672869f81d2ca0a4c525dde004ac96f45 (main, 2026-09-29; 28 commits after tag v0.3.4); pyproject version 0.3.4; FastMCP 2.13.0.2 (serverInfo.version), mcp SDK 1.25.0",
+  "language": "Python 3.12.12 (FastMCP / MCP SDK Streamable HTTP on FastAPI + uvicorn 0.40.0 with uvloop/httptools; SQLAlchemy 2.0.45 async + aiosqlite 0.22.1; GitPython 3.1.46 + system git)",
+  "launch": [
+    "/tmp/silk-competitors/mcp-agent-mail/.venv/bin/python", "-I", "-m", "mcp_agent_mail",
+    "serve-http", "--host", "127.0.0.1", "--port", "{PORT}"
+  ],
+  "cwd": "{DATADIR}",
+  "cwd_notes": "Required. Settings are read from os.environ with a fallback to ./.env in the working directory, so start the server in the fresh, empty {DATADIR} so no stray .env is picked up. `silk-bench foreign` already sets cmd.Dir to {DATADIR}. -I keeps the cwd and script directory off sys.path. The process is a single uvicorn worker (one PID), but git child processes are spawned per send (see notes). Startup prints a Rich banner and logs one INFO access line per request to stdout: redirect to a file. Cold start to the first 200 on /health/liveness was about 1.8 s with a warm .pyc cache (about 1.1 s of that is imports) and about 7 s on the very first launch, when the .pyc files are compiled.",
+  "env": {
+    "STORAGE_ROOT": "{DATADIR}/archive",
+    "DATABASE_URL": "sqlite+aiosqlite:///{DATADIR}/storage.sqlite3",
+    "HTTP_BEARER_TOKEN": "silk-bench-local-token",
+    "HTTP_ALLOW_LOCALHOST_UNAUTHENTICATED": "false",
+    "HTTP_RBAC_DEFAULT_ROLE": "writer",
+    "LLM_ENABLED": "false",
+    "TOOLS_LOG_ENABLED": "false",
+    "LOG_RICH_ENABLED": "false",
+    "LOG_LEVEL": "WARNING",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1"
+  },
+  "env_notes": "Merge these over the parent environment. PATH must contain git, because GitPython shells out to it (the smoke run used /usr/bin/git, Apple Git 2.50.1). STORAGE_ROOT and DATABASE_URL put the per-run git archive and SQLite DB under {DATADIR}. By default they would be ~/.mcp_agent_mail_git_mailbox_repo and ./storage.sqlite3. Auth: by default localhost is exempt from auth and auto-elevated to the writer role. These settings make every request present the fixed bearer token (401 without it, verified). Static-bearer requests get HTTP_RBAC_DEFAULT_ROLE, which is 'reader' by default, and readers may not call send_message, so it is set to writer. LLM, tool-call debug panels and Rich logging are off. LLM_ENABLED already defaults to false in code. The other two only print Rich console panels, so disabling them removes console-rendering overhead the product would otherwise pay. GIT_CONFIG_* keeps the user's ~/.gitconfig out of the archive's git subprocesses. Rate limiting is off by default (HTTP_RATE_LIMIT_ENABLED=false). Everything else is default: contact enforcement, the git archive, the commit queue, and the background workers.",
+  "health": "/health/liveness",
+  "health_notes": "GET /health/liveness returns 200 {\"status\":\"alive\"} with no auth and no DB access. GET /health/readiness also runs ensure_schema plus SELECT 1.",
+  "templating": "Format of cmd/silk-bench/foreign.go: bodies are substituted as raw text, then sent. {ID} = fresh 32-hex id per request (JSON-RPC id, and subject bench-{ID}). {W} = worker index, so each worker registers its own agents agent-x-{W} -> agent-y-{W}. {TEXT} = the 57-byte message (no characters needing JSON escaping). {SID}/{RSID} = sender/recipient MCP session ids, {XTOKEN}/{YTOKEN} = registration tokens, {MSG_ID} = server message id (a JSON number captured into a string; message_id \"7\" is accepted, verified). Steps with \"as\":\"recipient\" use the recipient connection. All /mcp/ calls are JSON-RPC over the stateful Streamable HTTP mount: /mcp/ with the trailing slash issues Mcp-Session-Id and answers every POST with one application/json body (json_response=true, never SSE). A tool failure is HTTP 200 with \"isError\":true, and an MCP protocol error is HTTP 200/400 with \"error\":{...}; the Go driver treats both as errors.",
+  "per_worker_setup": [
+    {
+      "method": "POST", "path": "/mcp/",
+      "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18"},
+      "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "silk-bench", "version": "0"}}},
+      "capture": [{"from": "header", "name": "Mcp-Session-Id", "var": "SID"}]
+    },
+    {
+      "method": "POST", "path": "/mcp/",
+      "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{SID}"},
+      "body": {"jsonrpc": "2.0", "method": "notifications/initialized"}
+    },
+    {
+      "as": "recipient",
+      "method": "POST", "path": "/mcp/",
+      "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18"},
+      "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "silk-bench", "version": "0"}}},
+      "capture": [{"from": "header", "name": "Mcp-Session-Id", "var": "RSID"}]
+    },
+    {
+      "as": "recipient",
+      "method": "POST", "path": "/mcp/",
+      "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{RSID}"},
+      "body": {"jsonrpc": "2.0", "method": "notifications/initialized"}
+    },
+    {
+      "method": "POST", "path": "/mcp/",
+      "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{SID}"},
+      "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "tools/call", "params": {"name": "ensure_project", "arguments": {"human_key": "/silk-bench/project"}}}
+    },
+    {
+      "method": "POST", "path": "/mcp/",
+      "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{SID}"},
+      "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "tools/call", "params": {"name": "register_agent", "arguments": {"project_key": "/silk-bench/project", "program": "silk-bench", "model": "none", "name": "agent-x-{W}"}}},
+      "capture": [{"from": "json", "name": "result.structuredContent.registration_token", "var": "XTOKEN"}]
+    },
+    {
+      "as": "recipient",
+      "method": "POST", "path": "/mcp/",
+      "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{RSID}"},
+      "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "tools/call", "params": {"name": "register_agent", "arguments": {"project_key": "/silk-bench/project", "program": "silk-bench", "model": "none", "name": "agent-y-{W}"}}},
+      "capture": [{"from": "json", "name": "result.structuredContent.registration_token", "var": "YTOKEN"}]
+    },
+    {
+      "as": "recipient",
+      "method": "POST", "path": "/mcp/",
+      "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{RSID}"},
+      "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "tools/call", "params": {"name": "set_contact_policy", "arguments": {"project_key": "/silk-bench/project", "agent_name": "agent-y-{W}", "policy": "open", "registration_token": "{YTOKEN}"}}}
+    }
+  ],
+  "per_worker_setup_notes": "Steps: (1-2) sender MCP session: initialize, capturing the Mcp-Session-Id response header (without it later calls get 400 'Missing session ID'), then notifications/initialized, which returns 202 with an empty body. (3-4) The same for the recipient connection. (5) ensure_project. It is idempotent, and human_key must be absolute-path-like but need not exist; the first call per server initializes the project git archive. (6-7) register_agent agent-x-{W} on the sender session and agent-y-{W} on the recipient session, capturing each registration_token. Each registration writes agents/<name>/profile.json plus a git commit (about 100 ms). Explicit names must match [A-Za-z0-9][A-Za-z0-9._-]{0,127} AND contain one of - _ . : in the default AGENT_NAME_ENFORCEMENT_MODE=coerce a name like x0 is silently replaced by a random adjective+noun name (e.g. DustyCreek), and later calls naming x0 fail. Re-registering an existing name requires its token, which is fine with a fresh server per level. (8) set_contact_policy agent-y-{W} open. This is required: under the default 'auto' policy the first agent-x -> agent-y send fails with isError 'Contact approval required' and drops a contact-request message into the recipient inbox. 'open' is the allow-all analogue of AMP's open ContactPolicy, and the per-send contact-policy queries still run.",
+  "send": {
+    "method": "POST", "path": "/mcp/",
+    "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{SID}"},
+    "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "tools/call", "params": {"name": "send_message", "arguments": {"project_key": "/silk-bench/project", "sender_name": "agent-x-{W}", "sender_token": "{XTOKEN}", "to": ["agent-y-{W}"], "subject": "bench-{ID}", "body_md": "{TEXT}"}}},
+    "capture": [{"from": "json", "name": "result.structuredContent.deliveries.0.payload.id", "var": "MSG_ID"}]
+  },
+  "send_notes": "Synchronous: the 200 arrives only after the SQLite insert and the git commit of 3 markdown files (canonical messages/YYYY/MM/<ts>__bench-<id>__<n>.md, sender outbox copy, recipient inbox copy) through the in-process commit queue. The queue merges up to 5 non-conflicting queued commits, collecting for up to 5 ms. The response echoes the full message twice (result.content[0].text and result.structuredContent): {deliveries:[{project, payload:{id, subject, body_md, from, to, created_ts, ...}}], count:1, verified_sender:true, attachments:[]}. The subject is required. ack_required defaults to false, and acknowledge_message works either way.",
+  "receive": {
+    "as": "recipient",
+    "method": "POST", "path": "/mcp/",
+    "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{RSID}"},
+    "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "tools/call", "params": {"name": "fetch_inbox", "arguments": {"project_key": "/silk-bench/project", "agent_name": "agent-y-{W}", "registration_token": "{YTOKEN}", "unread_only": true, "include_bodies": true, "limit": 100}}}
+  },
+  "receive_notes": "Returns result.structuredContent.result = [{id, subject, body_md, from, created_ts, ack_required, kind, read_at, ...}], newest first. Poll-only: there is no push, and resources.subscribe is false. fetch_inbox does not change state. unread_only filters recipients whose read_ts is NULL, and the ack sets read_ts, so in the send -> receive -> ack loop each fetch returns exactly the one new message (verified in the smoke run). Because send is synchronous, one fetch is enough and no polling loop is needed. limit defaults to 20.",
+  "ack": {
+    "as": "recipient",
+    "method": "POST", "path": "/mcp/",
+    "headers": {"Authorization": "Bearer silk-bench-local-token", "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{RSID}"},
+    "body": {"jsonrpc": "2.0", "id": "{ID}", "method": "tools/call", "params": {"name": "acknowledge_message", "arguments": {"project_key": "/silk-bench/project", "agent_name": "agent-y-{W}", "registration_token": "{YTOKEN}", "message_id": "{MSG_ID}"}}}
+  },
+  "ack_notes": "Returns {message_id, acknowledged:true, acknowledged_at, read_at}. SQLite only (sets read_ts and ack_ts on the recipient row). No git commit. Idempotent. Messages are never deleted.",
+  "per_worker_teardown": [
+    {"method": "DELETE", "path": "/mcp/", "headers": {"Authorization": "Bearer silk-bench-local-token", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{SID}"}},
+    {"as": "recipient", "method": "DELETE", "path": "/mcp/", "headers": {"Authorization": "Bearer silk-bench-local-token", "MCP-Protocol-Version": "2025-06-18", "Mcp-Session-Id": "{RSID}"}}
+  ],
+  "install_paths": ["/tmp/silk-competitors/mcp-agent-mail/.venv/lib/python3.12/site-packages"],
+  "install_notes": "243.5 MB after use, of which 26.2 MB is runtime .pyc (about 217 MB excluding .pyc). Installed with uv sync --frozen --no-dev --no-editable from the repo's uv.lock (Python 3.12). It includes litellm, openai, tiktoken and similar packages that the core pulls in unconditionally even with LLM features disabled. The system git (/usr/bin/git, Apple Git 2.50.1) is an external runtime dependency and is not counted. The uv-managed CPython 3.12.12 interpreter is excluded.",
+  "notes": "STORAGE (default product behavior, kept): every message goes to two stores. (1) SQLite through SQLAlchemy async/aiosqlite at DATABASE_URL, with PRAGMA journal_mode=WAL and synchronous=NORMAL: a commit appends to the WAL without fsync, and fsync happens only at checkpoint (wal_autocheckpoint=1000 pages). Writes are atomic but recent commits are not durable across power loss. There is also an FTS5 index (fts_messages: subject, body). (2) A git repository under STORAGE_ROOT: 3 markdown files with JSON front matter per message plus a commit by GitPython. GitPython writes the objects and index itself, with no fsync. It opens a new Repo per commit, and each commit spawned 3 git child processes: `git diff --cached` for is_dirty, plus `git cat-file --batch` and `git cat-file --batch-check` helpers. A PATH shim in the smoke run counted 18 git execs for 6 commits. Those children are not in the server PID's RSS/CPU, so silk-bench foreign's ps-of-the-PID sampling understates this system's CPU and RSS per send. Sample the process tree, or add children's rusage. In the smoke run, sequential send_message took about 115 ms, fetch_inbox about 9 ms and acknowledge_message about 8 ms. Agent profiles are git-committed at registration. Acks and reads touch SQLite only. The archive grows by 3 files and 1 commit per message, and nothing is ever deleted. DURABILITY: no per-message fsync in either store. ENCRYPTION: none at rest, none in transit (plain HTTP on localhost; the docs recommend TLS at a reverse proxy). Message bodies are plaintext markdown in the git repo and the web UI at /mail. AUTH: transport is the static bearer token configured above (constant-time compare). The server has optional JWT/JWKS + RBAC, unused here. Agent identity uses per-agent registration tokens (random bearer strings checked with hmac.compare_digest) passed as sender_token / registration_token on every call. A successful call also binds the agent to the MCP session. There are no signatures, no message signing and no ledger: 'verified_sender' means the token matched. CONTACT: per-recipient policy (default auto) checked on every send, set to open for the benchmark. BACKGROUND WORK (defaults on): a file-reservation cleanup worker every 60 s, an hourly stale-agent auto-retire sweep (24 h inactivity threshold, so irrelevant here), and an FD health monitor. The FastMCP context also logs a DEBUG 'Sending INFO to client' line per tool call even with LOG_LEVEL=WARNING."
+}

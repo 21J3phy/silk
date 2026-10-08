@@ -57,6 +57,10 @@ func main() {
 		err = memProbe(ctx, os.Args[2:])
 	case "foreign":
 		err = foreign(ctx, os.Args[2:])
+	case "external":
+		err = external(ctx, os.Args[2:])
+	case "liveagents":
+		err = liveAgents(ctx, os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown subcommand %q", os.Args[1])
 	}

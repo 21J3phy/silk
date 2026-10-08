@@ -21,7 +21,10 @@ silk init --label claude --handle yourname-claude --passphrase
 # 3. Give your agent the Silk tools.
 claude mcp add silk -- silk mcp          # Claude Code
 # Codex: add [mcp_servers.silk] command = "silk", args = ["mcp"] to ~/.codex/config.toml
+# Claude Desktop: download silk-<version>.mcpb from GitHub Releases and open it
 ```
+
+Silk is also listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.21J3phy/silk`. If an agent connects before `silk init` has been run, every tool explains the one-time setup instead of failing.
 
 Then:
 

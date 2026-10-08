@@ -30,4 +30,16 @@ token=""
 go run -C "$root" ./cmd/silk release-publish --version "$ver" --key "$key" --dir "$dir" --url-map "$map" --notes "$notes" --record "$root/releases"
 "$root/scripts/bundle_relay_vercel.sh" >/dev/null
 (cd "$root/dist/relay-vercel" && vercel deploy --prod --yes >/dev/null)
-echo "Published $ver; install.sh now pins $(grep -c 'url=' "$root/dist/relay-vercel/install.sh") builds."
+# GitHub Release: binaries, Claude Desktop bundle and checksums. Publishing it
+# triggers .github/workflows/publish-mcp.yml, which lists the bundle in the MCP Registry.
+"$root/scripts/build_mcpb.sh" "$ver" >/dev/null
+sums="$root/dist/release/SHA256SUMS-$ver"
+(cd "$dir" && shasum -a 256 silk-* && cd "$root/dist/release" && shasum -a 256 "silk-$ver.mcpb") > "$sums"
+gh release create "v$ver" -R 21J3phy/silk --target "$(git -C "$root" rev-parse HEAD)" --title "Silk $ver" --notes "$notes
+
+**Install** (macOS, Linux): \`curl -fsSL https://silk-relay.vercel.app/install.sh | sh\`, then \`silk init --label <name> --passphrase\` and \`claude mcp add silk -- silk mcp\`.
+**Update:** \`silk update\` installs a release only if it is signed with the pinned release key and recorded on the public ledger.
+**Claude Desktop:** download \`silk-$ver.mcpb\` and open it.
+**Verify by hand:** SHA-256 sums are in \`SHA256SUMS\`; the signed manifest is at https://silk-relay.vercel.app/v2/release/manifest." \
+  "$dir"/silk-* "$root/dist/release/silk-$ver.mcpb" "$sums#SHA256SUMS" >/dev/null
+echo "Published $ver; install.sh now pins $(grep -c 'url=' "$root/dist/relay-vercel/install.sh") builds; GitHub release v$ver created."

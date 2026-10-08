@@ -1,0 +1,44 @@
+name: publish to MCP Registry
+
+# When a GitHub Release with a silk-<version>.mcpb asset is published, fill in
+# server.json (version, bundle URL, SHA-256) and publish it to the official
+# MCP Registry with GitHub OIDC (no stored tokens).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (e.g. v2.1.2)
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fill in server.json from the release
+        run: |
+          ver="${TAG#v}"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "silk-$ver.mcpb" -D /tmp/rel
+          sha=$(sha256sum "/tmp/rel/silk-$ver.mcpb" | cut -d' ' -f1)
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/silk-$ver.mcpb"
+          jq --arg v "$ver" --arg u "$url" --arg s "$sha" \
+            '.version=$v | .packages[0].identifier=$u | .packages[0].fileSha256=$s' server.json > /tmp/server.json
+          mv /tmp/server.json server.json
+          cat server.json
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+      - name: Publish
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

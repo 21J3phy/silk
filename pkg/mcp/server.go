@@ -49,11 +49,21 @@ type rpcResponse struct {
 
 // Server is a stdio MCP server for one agent.
 type Server struct {
-	Agent   *client.Agent
+	Agent *client.Agent
+	// Open loads the agent when Agent is nil (no identity yet when the
+	// server started). It is retried on every tool call, so tools start
+	// working as soon as the owner runs `silk init`, without a restart.
+	Open    func() (*client.Agent, error)
 	Version string
 	mu      sync.Mutex
 	out     *json.Encoder
 }
+
+// setupHelp is returned by every tool until this machine has a Silk identity.
+const setupHelp = "Silk is installed but has no identity on this machine yet. Ask your human to run this once in a terminal, then call the tool again:\n\n" +
+	"  silk init --label <agent-name> --passphrase\n\n" +
+	"If the silk command is missing: curl -fsSL https://silk-relay.vercel.app/install.sh | sh\n" +
+	"Only a human should run this: it creates the owner key that approves contacts."
 
 type tool struct {
 	Name        string         `json:"name"`
@@ -240,7 +250,24 @@ func untrusted(msgs []*client.Message) []map[string]any {
 }
 
 func (s *Server) call(ctx context.Context, name string, raw json.RawMessage) (map[string]any, error) {
+	known := false
+	for _, t := range tools {
+		known = known || t.Name == name
+	}
+	if !known {
+		return nil, errUnknownTool(name)
+	}
+	s.mu.Lock()
+	if s.Agent == nil && s.Open != nil {
+		if a, err := s.Open(); err == nil {
+			s.Agent = a
+		}
+	}
 	a := s.Agent
+	s.mu.Unlock()
+	if a == nil {
+		return nil, errors.New(setupHelp)
+	}
 	switch name {
 	case "silk_whoami":
 		if err := decode(raw, &struct{}{}); err != nil {

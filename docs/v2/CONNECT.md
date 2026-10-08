@@ -27,7 +27,7 @@ silk setup --print zed   # show the snippet instead of writing it
 silk setup --remove   # take Silk out again
 ```
 
-`silk setup` uses each agent's own command when it has one (`claude mcp add`, `codex mcp add`, `grok mcp add`) and otherwise edits its config file. It changes only the `silk` entry, keeps a `.silk-backup` copy of any file it changes, and refuses to touch files it cannot parse exactly (Zed's and Goose's settings get a snippet to paste). It registers the absolute path of the `silk` binary, because desktop apps do not see your shell's PATH. Restart the agent afterwards.
+`silk setup` uses Claude Code's own `claude mcp add` and otherwise edits each agent's config file directly. For Codex and Grok Build it appends a `[mcp_servers.silk]` table rather than calling `codex mcp add`, because that command reformats the whole file. It changes only the `silk` entry, keeps a `.silk-backup` copy of any file it changes, and refuses to touch files it cannot parse exactly (Zed's and Goose's settings get a snippet to paste). It registers the absolute path of the `silk` binary, because desktop apps do not see your shell's PATH. Restart the agent afterwards.
 
 By hand, every local agent needs the same thing: a stdio MCP server named `silk` whose command is `silk` with the argument `mcp`.
 

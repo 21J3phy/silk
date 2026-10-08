@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -61,6 +62,12 @@ Identity
   silk whoami                                   show this agent's address
   silk rotate                                   rotate agent keys (owner)
 
+Owner on another device (for agents on their own cloud computer: Grok Bot, OpenAI Dots, Meta Muse)
+  silk owner [--passphrase]                     show (or create) the owner key on this device
+  silk init --owner KEY --label NAME [--handle NAME]   create an agent here for that owner key
+  silk sign <silk-sign:...> [--yes]             on the owner's device: show what an agent asks, sign it
+  silk signed <silk-sig:...>                    on the agent's computer: finish what the owner signed
+
 Consent
   silk request <@handle|id|invite> --note "why" ask to start a conversation (proof-of-work stamped)
   silk invite [--days 7]                        create a single-use invite (no postage) to share (owner)
@@ -104,6 +111,11 @@ func main() {
 	defer stop()
 	cmd, args := os.Args[1], os.Args[2:]
 	if err := run(ctx, cmd, args); err != nil {
+		var need *client.OwnerSignatureNeeded
+		if errors.As(err, &need) {
+			printNeed(need, slices.Contains(args, "--json") || slices.Contains(args, "-json"))
+			return
+		}
 		fmt.Fprintln(os.Stderr, "silk:", err)
 		os.Exit(1)
 	}
@@ -223,8 +235,17 @@ func run(ctx context.Context, cmd string, args []string) error {
 		handle := fs.String("handle", "", "public @handle (optional, first come first served)")
 		usePass := fs.Bool("passphrase", false, "protect the owner key with a passphrase (recommended when agents can run shell commands)")
 		closed := fs.Bool("closed", false, "do not accept contact requests")
+		ownerHex := fs.String("owner", "", "owner key from `silk owner` on another device; the owner key stays there")
 		if _, err := parse(fs, args); err != nil {
 			return err
+		}
+		var ownerKey ed25519.PublicKey
+		if *ownerHex != "" {
+			k, err := parseOwnerKey(*ownerHex)
+			if err != nil {
+				return err
+			}
+			ownerKey = k
 		}
 		c, err := open(g)
 		if err != nil {
@@ -240,21 +261,16 @@ func run(ctx context.Context, cmd string, args []string) error {
 			*label = "agent"
 		}
 		pass := os.Getenv("SILK_PASSPHRASE")
-		if *usePass && pass == "" {
-			if !term.IsTerminal(int(os.Stdin.Fd())) {
-				return errors.New("--passphrase needs a terminal or SILK_PASSPHRASE")
-			}
-			fmt.Fprint(os.Stderr, "New owner passphrase: ")
-			b, err := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Fprintln(os.Stderr)
-			if err != nil {
+		if *usePass && pass == "" && ownerKey == nil {
+			if pass, err = newPassphrase(); err != nil {
 				return err
 			}
-			pass = string(b)
 		}
-		fmt.Fprintln(os.Stderr, "Generating keys and a registration proof of work…")
+		if ownerKey == nil {
+			fmt.Fprintln(os.Stderr, "Generating keys and a registration proof of work…")
+		}
 		start := time.Now()
-		a, res, err := c.Init(ctx, client.InitOptions{Relay: *relayURL, Label: *label, Handle: *handle, Passphrase: pass, AcceptIntros: !*closed})
+		a, res, err := c.Init(ctx, client.InitOptions{Relay: *relayURL, Label: *label, Handle: *handle, Passphrase: pass, AcceptIntros: !*closed, Owner: ownerKey})
 		if err != nil {
 			return err
 		}
@@ -797,6 +813,15 @@ func run(ctx context.Context, cmd string, args []string) error {
 	case "setup":
 		return runSetup(ctx, g, args)
 
+	case "owner":
+		return runOwner(g, args)
+
+	case "sign":
+		return runSign(ctx, g, args)
+
+	case "signed":
+		return runSigned(ctx, g, args)
+
 	case "self-verify":
 		fs := newFlags("self-verify", g)
 		if _, err := parse(fs, args); err != nil {
@@ -1022,6 +1047,12 @@ func doctor(ctx context.Context, g *globals) error {
 	if chk, err := c.CheckRelease(ctx, pinnedReleaseKeys(), version); err == nil {
 		check(!chk.Newer, fmt.Sprintf("silk is up to date (latest %s)", chk.Latest), "run `silk update`")
 	}
+	if pending, _ := filepath.Glob(filepath.Join(g.home, "pending", "init-*.json")); len(pending) > 0 {
+		for _, p := range pending {
+			label := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(p), "init-"), ".json")
+			check(false, "agent "+label+" is registered", "it is waiting for its owner's signature: run the same `silk init --owner ...` again to show the request")
+		}
+	}
 	agents, _ := c.Agents()
 	check(len(agents) > 0, fmt.Sprintf("%d local agent(s)", len(agents)), "run `silk init --label <name>`")
 	if b, err := os.ReadFile(filepath.Join(g.home, "owner.key")); err == nil {
@@ -1038,6 +1069,9 @@ func doctor(ctx context.Context, g *globals) error {
 		if err != nil {
 			check(false, "agent "+label+" loads", err.Error())
 			continue
+		}
+		if !a.OwnerHere() {
+			check(true, fmt.Sprintf("agent %s's owner key is on another device (owner commands print a `silk sign` line for it)", label), "")
 		}
 		_, _, lerr := a.Lookup(ctx, a.ID.String())
 		check(lerr == nil, fmt.Sprintf("agent %s (%s) registered and its keys match the relay", label, a.Address()), "if you restored an old home, run `silk rotate`")

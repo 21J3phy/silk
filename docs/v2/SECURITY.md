@@ -36,7 +36,7 @@ This describes what Silk v2 guarantees, against whom, and where the limits are. 
 
 | Key | Location | Used for |
 |---|---|---|
-| Owner key (Ed25519) | `~/.silk/owner.key`, optionally encrypted with PBKDF2-SHA256 (600,000 iterations) + AES-256-GCM | Certificates, grants, declines, policies, invites, owner revocations |
+| Owner key (Ed25519) | `~/.silk/owner.key` on the owner's device, optionally encrypted with PBKDF2-SHA256 (600,000 iterations) + AES-256-GCM | Certificates, grants, declines, policies, invites, owner revocations |
 | Agent keys (Ed25519 + X-Wing) | `~/.silk/agents/<label>/keys.json` (0600) | Signing frames, decrypting intros, signed reads |
 | Conversation state | `~/.silk/agents/<label>/state.json` (0600, file-locked) | Ratchet chain keys, outbox, local inbox |
 | Relay ledger key | Relay environment (`SILK_LEDGER_KEY`, sensitive) | Signing checkpoints; its public half is pinned in clients |
@@ -53,6 +53,15 @@ Agents that run on someone else's servers (grok.com, Grok Bot, Meta Muse, OpenAI
 - **Who can connect:** a client needs either an OAuth sign-in or the connect token. Signing in requires the pairing code, which is shown only in the owner's terminal. Each code works once, and five wrong codes replace it. PKCE (S256) is mandatory, authorization codes are single-use and expire after 2 minutes, and redirects go only to URIs the client registered. Access tokens last 24 hours. Refresh tokens last 180 days and rotate on every use. All tokens are stored as SHA-256 hashes in `~/.silk/mcp-remote-<agent>.json` (0600).
 - **The connect token** (header or secret URL) is a long-lived bearer secret for agents that cannot sign in. Anyone holding it can act as the agent within its conversations. `silk mcp --http --reset` revokes it and every sign-in.
 - **Exposure:** the server listens on 127.0.0.1 by default. `--tunnel` publishes it through a Cloudflare quick tunnel; every request still needs a token. Registration needs no credentials, by design of MCP authorization, so it is capped at 64 clients, and clients that never signed in are evicted first. The sign-in page refuses framing.
+
+## Agents on their own computer (`silk init --owner`)
+
+An agent on a computer its owner does not sit at (Grok Bot, OpenAI Dots, Meta Muse, a server) gets only agent keys. `silk init --owner <key>` there creates them and asks the owner to delegate them; the owner key never leaves the owner's device.
+
+- **Every owner decision is signed on the owner's device.** The agent builds the frame without the owner signature and prints a `silk sign silk-sign:…` request: the exact bytes to sign. `silk sign` decodes them and shows what they approve (the agent's label, handle and expiry; the peer, budgets and expiry of a conversation; and so on), asks for confirmation, and signs. The agent attaches the signature and submits the frame; the relay checks it exactly as if both keys were on one machine.
+- **What a request can get signed:** only owner frames: agent certificates, grants, declines, owner revocations, contact policies and invites. A request for any other kind (a message, an ack, a release) is refused, and so is a request naming another owner key. Each kind uses its own signature domain, so a signature cannot be replayed as anything else.
+- **What the agent can do with a signature:** finish that one request, once. A signature is over bytes the agent proposed, so the owner should read what `silk sign` shows: approving a conversation lets that peer message the agent within the budgets shown.
+- **What the agent's computer holds:** the agent's keys and conversation state, like any agent. Whoever controls that computer can act as the agent, but cannot approve contacts.
 
 ## Hardening already in place
 

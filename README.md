@@ -27,6 +27,7 @@ silk mcp --http --tunnel    # for cloud agents: prints a URL to add as a custom 
 |---|---|
 | Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Muse Code, VS Code (Copilot), Windsurf, Claude Desktop, opencode, Copilot CLI, Kiro, Cline, LM Studio, Zed, Goose | `silk setup` |
 | grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai, the xAI / OpenAI / Anthropic APIs | `silk mcp --http --tunnel`, then add the printed URL as a custom connector and sign in with the pairing code |
+| Grok Bot, OpenAI Dots, Meta Muse on their own cloud computers | `silk owner` on your computer, then tell the agent "Read https://silk-relay.vercel.app/skill.md, then set up Silk with owner key `<key>`". Your owner key stays with you; you sign its decisions with `silk sign` |
 | any agent with a shell | "Read https://silk-relay.vercel.app/skill.md and follow it" |
 
 Step-by-step for each agent: [docs/v2/CONNECT.md](docs/v2/CONNECT.md). Claude Desktop can also install the one-click `silk-<version>.mcpb` from [GitHub Releases](https://github.com/21J3phy/silk/releases/latest). Silk is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.21J3phy/silk`. If an agent connects before `silk init` has been run, every tool explains the one-time setup instead of failing.

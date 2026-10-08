@@ -146,6 +146,10 @@ type InitOptions struct {
 	AcceptIntros bool
 	MinPoW       uint8
 	Validity     time.Duration
+	// Owner, when set to a key that is not on this device, creates the agent
+	// for an owner elsewhere: Init returns an OwnerSignatureNeeded, and
+	// CompleteInit registers the agent once the owner has signed.
+	Owner ed25519.PublicKey
 }
 
 // Init creates (if needed) the owner key, creates agent keys, and registers the agent.
@@ -173,6 +177,14 @@ func (c *Client) Init(ctx context.Context, o InitOptions) (*Agent, *relay.Result
 	if err := os.MkdirAll(c.Home, 0o700); err != nil {
 		return nil, nil, err
 	}
+	if o.Owner != nil {
+		if len(o.Owner) != ed25519.PublicKeySize {
+			return nil, nil, errors.New("owner key must be 32 bytes")
+		}
+		if pub, err := c.OwnerPublic(); err != nil || !pub.Equal(o.Owner) {
+			return nil, nil, c.initForOwner(o)
+		}
+	}
 	var owner ed25519.PrivateKey
 	if _, err := os.Stat(c.ownerPath()); errors.Is(err, os.ErrNotExist) {
 		_, owner, err = ed25519.GenerateKey(rand.Reader)
@@ -185,9 +197,21 @@ func (c *Client) Init(ctx context.Context, o InitOptions) (*Agent, *relay.Result
 	} else if owner, err = c.OwnerKey(); err != nil {
 		return nil, nil, err
 	}
-	dir := c.agentDir(o.Label)
-	if _, err := os.Stat(filepath.Join(dir, "keys.json")); err == nil {
-		return nil, nil, fmt.Errorf("agent %q already exists in %s", o.Label, dir)
+	if _, err := os.Stat(filepath.Join(c.agentDir(o.Label), "keys.json")); err == nil {
+		return nil, nil, fmt.Errorf("agent %q already exists in %s", o.Label, c.agentDir(o.Label))
+	}
+	cert, keys, err := c.newAgentCert(o, owner.Public().(ed25519.PublicKey))
+	if err != nil {
+		return nil, nil, err
+	}
+	cert.Sign(owner, keys.sign)
+	return c.register(ctx, info, cert, keys)
+}
+
+// newAgentCert makes fresh agent keys and their certificate, unsigned.
+func (c *Client) newAgentCert(o InitOptions, owner ed25519.PublicKey) (*wire.Cert, *agentKeys, error) {
+	if o.Validity == 0 {
+		o.Validity = 365 * 24 * time.Hour
 	}
 	_, sign, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -201,12 +225,47 @@ func (c *Client) Init(ctx context.Context, o InitOptions) (*Agent, *relay.Result
 	now := c.Now()
 	cert := &wire.Cert{Label: o.Label, Handle: o.Handle, Serial: 1, Suite: wire.Suite1, KEMPub: kem.Public(),
 		Created: now.UnixMilli(), Expires: now.Add(o.Validity).UnixMilli(), MinPoW: o.MinPoW}
-	copy(cert.OwnerPub[:], owner.Public().(ed25519.PublicKey))
+	copy(cert.OwnerPub[:], owner)
 	copy(cert.SignPub[:], sign.Public().(ed25519.PublicKey))
 	if o.AcceptIntros {
 		cert.Flags |= wire.CertAcceptsIntros
 	}
-	cert.Sign(owner, sign)
+	return cert, keys, nil
+}
+
+// initForOwner prepares an agent whose owner key is on another device and
+// returns the request the owner signs. Running it again returns the same request.
+func (c *Client) initForOwner(o InitOptions) error {
+	if _, err := os.Stat(filepath.Join(c.agentDir(o.Label), "keys.json")); err == nil {
+		return fmt.Errorf("agent %q already exists in %s", o.Label, c.agentDir(o.Label))
+	}
+	path := c.pendingInitPath(o.Label)
+	var p pendingInit
+	if err := readJSON(path, &p); err == nil {
+		if frame, err := wire.DecodeUnsigned(p.Body); err == nil && frameOwner(frame).Equal(o.Owner) {
+			return (&OwnerRequest{Op: "init", Body: p.Body}).needed()
+		}
+	}
+	cert, keys, err := c.newAgentCert(o, o.Owner)
+	if err != nil {
+		return err
+	}
+	p = pendingInit{Body: cert.Unsigned(), SignSeed: keys.sign.Seed(), KEM: keys.kem.Bytes()}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := writeJSON(path, p, 0o600); err != nil {
+		return err
+	}
+	if err := c.SaveConfig(); err != nil { // the relay and its pinned ledger key
+		return err
+	}
+	return (&OwnerRequest{Op: "init", Body: p.Body}).needed()
+}
+
+// register pays the registration postage, registers a signed certificate,
+// and saves the agent.
+func (c *Client) register(ctx context.Context, info *Info, cert *wire.Cert, keys *agentKeys) (*Agent, *relay.Result, error) {
 	nonce, err := pow.Solve(ctx, pow.Digest(pow.DomainRegister, cert.Raw), info.PoW.RegisterBits, 0)
 	if err != nil {
 		return nil, nil, err
@@ -219,6 +278,7 @@ func (c *Client) Init(ctx context.Context, o InitOptions) (*Agent, *relay.Result
 	if err := jsonUnmarshal(data, &res); err != nil {
 		return nil, nil, err
 	}
+	dir := c.agentDir(cert.Label)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
 	}
@@ -229,12 +289,12 @@ func (c *Client) Init(ctx context.Context, o InitOptions) (*Agent, *relay.Result
 		return nil, nil, err
 	}
 	if c.Config.DefaultAgent == "" {
-		c.Config.DefaultAgent = o.Label
+		c.Config.DefaultAgent = cert.Label
 	}
 	if err := c.SaveConfig(); err != nil {
 		return nil, nil, err
 	}
-	a := &Agent{c: c, Label: o.Label, dir: dir, ID: cert.ID(), Cert: cert, keys: keys}
+	a := &Agent{c: c, Label: cert.Label, dir: dir, ID: cert.ID(), Cert: cert, keys: keys}
 	return a, &res, nil
 }
 
@@ -246,12 +306,18 @@ func (a *Agent) Rotate(ctx context.Context) (*relay.Result, error) {
 	if err := readJSON(pendingPath, &pend); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
+	if pend.Cert == nil && pend.Body != nil {
+		return nil, (&OwnerRequest{Op: "rotate", Body: pend.Body}).needed()
+	}
 	if pend.Cert == nil {
 		// Fresh rotation: generate and persist everything before telling the relay,
 		// so an ambiguous network failure can be resumed with the identical frame.
-		owner, err := a.c.OwnerKey()
-		if err != nil {
-			return nil, err
+		var owner ed25519.PrivateKey
+		if a.ownerHere() {
+			var err error
+			if owner, err = a.c.OwnerKey(); err != nil {
+				return nil, err
+			}
 		}
 		_, sign, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
@@ -266,10 +332,17 @@ func (a *Agent) Rotate(ctx context.Context) (*relay.Result, error) {
 		cert.KEMPub = kem.Public()
 		cert.Created = a.c.Now().UnixMilli()
 		copy(cert.SignPub[:], sign.Public().(ed25519.PublicKey))
-		cert.Sign(owner, sign)
-		pend = pendingRotation{Cert: cert.Raw, SignSeed: sign.Seed(), KEM: kem.Bytes()}
+		pend = pendingRotation{SignSeed: sign.Seed(), KEM: kem.Bytes()}
+		if owner != nil {
+			pend.Cert = cert.Sign(owner, sign)
+		} else {
+			pend.Body = cert.Unsigned()
+		}
 		if err := writeJSON(pendingPath, pend, 0o600); err != nil {
 			return nil, err
+		}
+		if owner == nil {
+			return nil, (&OwnerRequest{Op: "rotate", Body: pend.Body}).needed()
 		}
 	}
 	cert, err := wire.DecodeCert(pend.Cert)
@@ -308,6 +381,7 @@ func (a *Agent) Rotate(ctx context.Context) (*relay.Result, error) {
 
 type pendingRotation struct {
 	Cert     []byte `json:"cert"`
+	Body     []byte `json:"body,omitempty"` // unsigned, while the owner signs elsewhere
 	SignSeed []byte `json:"sign_seed"`
 	KEM      []byte `json:"kem"`
 }
@@ -529,7 +603,8 @@ type AcceptOptions struct {
 // failure can be resumed by calling Accept again (the identical frame is resent).
 func (a *Agent) Accept(ctx context.Context, introID string, o AcceptOptions) (*GrantInfo, error) {
 	var frame []byte
-	err := a.withState(func(st *agentState) error {
+	var need *OwnerSignatureNeeded
+	err := a.withState(func(st *agentState) (err error) {
 		ii := st.InIntros[introID]
 		if ii != nil && ii.Status == "accepting" && ii.GrantFrame != nil {
 			frame = ii.GrantFrame // resume
@@ -538,8 +613,13 @@ func (a *Agent) Accept(ctx context.Context, introID string, o AcceptOptions) (*G
 		if ii == nil || ii.Status != "pending" {
 			return fmt.Errorf("no pending contact request %s", introID)
 		}
-		owner, err := a.c.OwnerKey()
-		if err != nil {
+		var owner ed25519.PrivateKey
+		if !a.ownerHere() {
+			if r := st.ownerRequest("accept", introID); r != nil {
+				need = r.needed()
+				return nil
+			}
+		} else if owner, err = a.c.OwnerKey(); err != nil {
 			return err
 		}
 		in, err := wire.DecodeIntro(ii.Frame)
@@ -571,12 +651,11 @@ func (a *Agent) Accept(ctx context.Context, introID string, o AcceptOptions) (*G
 		}
 		g := &wire.Grant{GrantID: in.IntroID, IntroHash: wire.Hash(in.Raw), From: in.From, To: a.ID, Created: now.UnixMilli(),
 			Expires: now.Add(ttl).UnixMilli(), BudgetAB: o.FromPeer, BudgetBA: o.ToPeer, Rate: o.Rate}
-		copy(g.OwnerPub[:], owner.Public().(ed25519.PublicKey))
+		copy(g.OwnerPub[:], a.ownerPub())
 		k2, err := seal.SealGrant(g, in.EphPub)
 		if err != nil {
 			return err
 		}
-		g.Sign(owner)
 		root, err := seal.Root(k1, k2, g.IntroHash, g)
 		if err != nil {
 			return err
@@ -585,15 +664,25 @@ func (a *Agent) Accept(ctx context.Context, introID string, o AcceptOptions) (*G
 		if err != nil {
 			return err
 		}
-		st.Sessions[ii.ID] = sess
-		st.Grants[ii.ID] = &GrantInfo{ID: ii.ID, Peer: ii.From, PeerHandle: ii.FromHandle, Scope: ii.Scope, SendBudget: g.BudgetBA,
+		gi := &GrantInfo{ID: ii.ID, Peer: ii.From, PeerHandle: ii.FromHandle, Scope: ii.Scope, SendBudget: g.BudgetBA,
 			RecvBudget: g.BudgetAB, Rate: g.Rate, ExpiresMs: g.Expires, Status: "pending"}
+		if owner == nil {
+			// The owner signs elsewhere; the session waits with the request.
+			need = st.addOwnerRequest(&OwnerRequest{Op: "accept", Ref: ii.ID, Body: g.Unsigned(a.ownerPub()),
+				Session: sess, Grant: gi, CreatedMs: now.UnixMilli()})
+			return nil
+		}
+		g.Sign(owner)
+		st.Sessions[ii.ID], st.Grants[ii.ID] = sess, gi
 		ii.Status, ii.GrantFrame = "accepting", g.Raw
 		frame = g.Raw
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if need != nil {
+		return nil, need
 	}
 	res, err := a.c.Submit(ctx, frame)
 	if err != nil && retryable(err) {
@@ -626,11 +715,15 @@ func (a *Agent) Accept(ctx context.Context, introID string, o AcceptOptions) (*G
 
 // Decline refuses a pending contact request (owner operation). Declines raise the sender's future PoW cost.
 func (a *Agent) Decline(ctx context.Context, introID string) error {
-	owner, err := a.c.OwnerKey()
-	if err != nil {
-		return err
+	var owner ed25519.PrivateKey
+	if a.ownerHere() {
+		var err error
+		if owner, err = a.c.OwnerKey(); err != nil {
+			return err
+		}
 	}
-	return a.withState(func(st *agentState) error {
+	var need *OwnerSignatureNeeded
+	err := a.withState(func(st *agentState) error {
 		ii := st.InIntros[introID]
 		if ii == nil || ii.Status != "pending" {
 			return fmt.Errorf("no pending contact request %s", introID)
@@ -640,6 +733,14 @@ func (a *Agent) Decline(ctx context.Context, introID string) error {
 			return err
 		}
 		d := &wire.Decline{IntroID: in.IntroID, IntroHash: wire.Hash(in.Raw), By: a.ID, Created: a.c.Now().UnixMilli()}
+		if owner == nil {
+			if r := st.ownerRequest("decline", introID); r != nil {
+				need = r.needed()
+			} else {
+				need = st.addOwnerRequest(&OwnerRequest{Op: "decline", Ref: introID, Body: d.Unsigned(a.ownerPub()), CreatedMs: d.Created})
+			}
+			return nil
+		}
 		d.Sign(owner)
 		if _, err := a.c.Submit(ctx, d.Raw); err != nil {
 			return err
@@ -647,6 +748,10 @@ func (a *Agent) Decline(ctx context.Context, introID string) error {
 		ii.Status, ii.Frame = "declined", nil
 		return nil
 	})
+	if err == nil && need != nil {
+		return need
+	}
+	return err
 }
 
 // ---------------------------------------------------------------------------
@@ -1144,6 +1249,22 @@ func (a *Agent) Revoke(ctx context.Context, grant string, asOwner bool) (*relay.
 		return nil, err
 	}
 	v := &wire.Revoke{GrantID: gid, By: a.ID, Created: a.c.Now().UnixMilli(), Role: wire.RoleAgent}
+	if asOwner && !a.ownerHere() {
+		v.Role = wire.RoleOwner
+		var need *OwnerSignatureNeeded
+		err := a.withState(func(st *agentState) error {
+			if r := st.ownerRequest("revoke", grant); r != nil {
+				need = r.needed()
+			} else {
+				need = st.addOwnerRequest(&OwnerRequest{Op: "revoke", Ref: grant, Body: v.Unsigned(), CreatedMs: v.Created})
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return nil, need
+	}
 	if asOwner {
 		owner, err := a.c.OwnerKey()
 		if err != nil {

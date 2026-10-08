@@ -118,7 +118,7 @@ const fmt = (v,d=0) => v==null?'–':Number(v).toLocaleString('en-US',{maximumFr
 function fmtMs(v){ if(v==null) return '–'; if(v>=10000) return fmt(v/1000,0)+' s'; if(v>=1000) return fmt(v/1000,1)+' s'; if(v>=10) return fmt(v,0)+' ms'; if(v>=1) return fmt(v,1)+' ms'; return fmt(v,2)+' ms'; }
 function fmtB(b){ return b==null?'–':b>=1e6?fmt(b/1e6,1)+' MB':b>=1e4?fmt(b/1e3,0)+' KB':fmt(b,0)+' B'; }
 const fmtMB = v => v==null?'–':fmt(v, v<10?1:0)+' MB';
-const fmtRate = v => v==null?'–':fmt(v)+'/s';
+const fmtRate = v => v==null?'–':fmt(v, v<10?1:0)+'/s';
 const NS='http://www.w3.org/2000/svg';
 function el(tag, attrs, parent){ const n=document.createElementNS(NS, tag); for(const k in attrs) n.setAttribute(k, attrs[k]); if(parent) parent.append(n); return n; }
 function txt(parent, x, y, s, cls, anchor){ const t=el('text',{x,y,'text-anchor':anchor||'start',class:cls||''},parent); t.textContent=s; return t; }
@@ -136,13 +136,21 @@ function table(container, head, rows){ const d=document.createElement('details')
 
 // One emphasis bar chart: systems sorted best first, Silk in the accent hue.
 const losses = [];
-function bars(container, o){
+// Label widths, measured with the chart's font (SVG text metrics are unreliable before layout).
+const measure = document.createElement('canvas').getContext('2d');
+measure.font = '600 11px ' + getComputedStyle(root).fontFamily;
+// Draw a set of charts into a grid: create every box first so each one is
+// measured at its final column width, then draw.
+function drawAll(container, charts, rowsFor){
+  const boxes = charts.map(() => { const b=document.createElement('div'); b.className='mini'; container.append(b); return b; });
+  charts.forEach((ch, i) => { if (!bars(boxes[i], Object.assign({rows: rowsFor(ch.get)}, ch))) boxes[i].remove(); });
+}
+function bars(box, o){
   const rows = o.rows.filter(r => r.v != null && r.v > 0);
-  if (rows.length < 2) return;
+  if (rows.length < 2) return null;
   rows.sort((a,b) => o.higher ? b.v - a.v : a.v - b.v);
   const silk = rows.find(r => r.silk), best = rows[0];
-  const box=document.createElement('div'); box.className='mini';
-  const h3=document.createElement('h3'); h3.append(document.createTextNode(o.title)); const sm=document.createElement('small'); sm.textContent=o.higher?'higher is better':'lower is better'; h3.append(sm); box.append(h3); container.append(box);
+  const h3=document.createElement('h3'); h3.append(document.createTextNode(o.title)); const sm=document.createElement('small'); sm.textContent=o.higher?'higher is better':'lower is better'; h3.append(sm); box.append(h3);
   const H=rows.length*26+6; const w=Math.max(300, box.clientWidth||440); const s=el('svg',{width:w,height:H,viewBox:`0 0 ${w} ${H}`,role:'img','aria-label':o.title},box);
   const L=118;
   // An outlier more than 6x the next value gets a broken bar so the rest stay readable.
@@ -152,7 +160,7 @@ function bars(container, o){
     if (silk && !r.silk) { const ratio = o.higher ? silk.v/r.v : r.v/silk.v; if (ratio >= 1.15) label += '  ·  Silk '+fmt(ratio, ratio<10?1:0)+'× better'; else if (ratio <= 1/1.15) label += '  ·  '+fmt(1/ratio, 1/ratio<10?1:0)+'× better than Silk'; }
     return label; };
   // Size the bars so every label fits beside its bar.
-  const labels = rows.map(labelOf); const widths = labels.map(l => { const t=txt(s,0,-100,l,'val'); const w0=t.getComputedTextLength(); t.remove(); return w0; });
+  const labels = rows.map(labelOf); const widths = labels.map(l => measure.measureText(l).width + 4);
   const frac = r => r.v > max ? 1 : r.v/max;
   let PW = w - L - 4; for (let i=0;i<rows.length;i++) PW = Math.min(PW, (w - L - 10 - widths[i]) / Math.max(frac(rows[i]), 1e-9));
   PW = Math.max(PW, 60);
@@ -184,7 +192,7 @@ function bars(container, o){
     {title:'Server cold start', f:fmtMs, get:x=>x.cold, note:'Process start until it answers HTTP; median of 5.'},
     {title:'Install size', f:fmtMB, get:x=>x.install, note:'Silk: one static relay binary. Python systems: site-packages only, excluding the interpreter.'},
   ];
-  for (const ch of charts) bars(c, Object.assign({rows:R(ch.get)}, ch));
+  drawAll(c, charts, R);
   table(document.getElementById('t-local'), ['System','Language','msg/s @16','msg/s @64','errors @64','p99 @64','deliver+ack','bytes send','bytes deliver+ack','CPU/msg','peak MB','cold start','install MB'],
     S.map(x=>[x.name,x.lang,fmt(x.thr16),fmt(x.thr64),fmt(x.err64),fmtMs(x.p99_64),fmtMs(x.rt),fmt(x.bytes),fmt(x.rtbytes),fmtMs(x.cpu),fmt(x.peak,1),fmtMs(x.cold),fmt(x.install,1)]));
   const t=document.getElementById('t-work');
@@ -208,7 +216,7 @@ function bars(container, o){
     {title:'Network bytes per message sent', f:fmtB, get:d=>d.bytes, note:'Sender process, measured by the OS (includes TLS).'},
     {title:'Client install size', f:fmtMB, get:d=>d.install, note:'Silk: one static binary. XMTP: the SDK\'s node_modules, excluding the Node.js runtime.'},
   ];
-  for (const ch of charts) bars(c, Object.assign({rows:pair(ch.get)}, ch));
+  drawAll(c, charts, pair);
   table(document.getElementById('t-live'), ['Metric','Silk','XMTP'], [['send p50 / p90',fmtMs(s.send)+' / '+fmtMs(s.send90),fmtMs(x.send)+' / '+fmtMs(x.send90)],['deliver p50 / p90',fmtMs(s.deliver)+' / '+fmtMs(s.deliver90),fmtMs(x.deliver)+' / '+fmtMs(x.deliver90)],
     ['ask-reply p50 / p90',fmtMs(s.rt)+' / '+fmtMs(s.rt90),fmtMs(x.rt)+' / '+fmtMs(x.rt90)],['new identity',fmtMs(s.register),fmtMs(x.register)],['client ready',fmtMs(s.reopen),fmtMs(x.reopen)],
     ['memory idle / peak',fmtMB(s.rss_idle)+' / '+fmtMB(s.rss_peak),fmtMB(x.rss_idle)+' / '+fmtMB(x.rss_peak)],['CPU per message',fmtMs(s.cpu),fmtMs(x.cpu)],['bytes per message',fmtB(s.bytes),fmtB(x.bytes)],['install',fmtMB(s.install),fmtMB(x.install)]]

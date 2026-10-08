@@ -1,0 +1,52 @@
+name: uptime
+
+# Checks the hosted relay every 30 minutes. A failure opens (or updates) one
+# "relay down" issue, which notifies the repository owner; recovery closes it.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RELAY: https://silk-relay.vercel.app
+      GH_TOKEN: ${{ github.token }}
+      TITLE: "Hosted relay is down"
+    steps:
+      - name: Probe
+        id: probe
+        run: |
+          fail=""
+          check() {
+            code=$(curl -s -o /tmp/body -w '%{http_code}' --max-time 30 --retry 2 --retry-delay 10 "$RELAY$1")
+            if [ "$code" != "200" ] || ! grep -q "$2" /tmp/body; then
+              fail="$fail $1 (HTTP $code)"
+            fi
+          }
+          check /healthz '"ok":true'
+          check /v2/info 'silk/2'
+          check /v2/ledger/checkpoint 'silk-relay'
+          check /install.sh 'silk'
+          check /v2/release '"frame"'
+          echo "fail=$fail" >> "$GITHUB_OUTPUT"
+      - name: Report
+        run: |
+          open=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number -q '.[0].number')
+          if [ -n "${{ steps.probe.outputs.fail }}" ]; then
+            msg="Failed at $(date -u +%FT%TZ):${{ steps.probe.outputs.fail }}. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            if [ -n "$open" ]; then gh issue comment "$open" -R "$GITHUB_REPOSITORY" -b "$msg"; else gh issue create -R "$GITHUB_REPOSITORY" -t "$TITLE" -b "$msg"; fi
+            exit 1
+          elif [ -n "$open" ]; then
+            gh issue close "$open" -R "$GITHUB_REPOSITORY" -c "Recovered at $(date -u +%FT%TZ)."
+          fi

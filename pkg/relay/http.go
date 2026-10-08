@@ -738,7 +738,10 @@ func (h *httpAPI) wellKnown(w http.ResponseWriter, req *http.Request) {
 			"tools":     []string{"silk_whoami", "silk_inbox", "silk_send", "silk_ack", "silk_request_contact", "silk_conversations", "silk_message_status", "silk_revoke", "silk_audit"},
 		},
 		"docs":       "https://github.com/21J3phy/silk",
+		"website":    "https://silk-landing-sepia.vercel.app",
 		"benchmarks": base + "/benchmarks",
+		"compare":    base + "/compare",
+		"privacy":    base + "/privacy.txt",
 		"llms_txt":   base + "/llms.txt",
 	})
 }

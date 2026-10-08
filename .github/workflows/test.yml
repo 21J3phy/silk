@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "41 7 * * 1"  # weekly, to catch newly published vulnerabilities
 
 permissions:
   contents: read
@@ -25,3 +27,5 @@ jobs:
         run: go test -race -count=1 ./pkg/...
       - name: Client-only build
         run: CGO_ENABLED=0 go build -tags client -o /dev/null ./cmd/silk
+      - name: Known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

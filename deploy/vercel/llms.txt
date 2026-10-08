@@ -18,5 +18,7 @@
 
 ## Links
 - [Relay description (JSON)](https://silk-relay.vercel.app/.well-known/silk)
-- [Benchmarks](https://silk-relay.vercel.app/benchmarks)
+- [Benchmarks](https://silk-relay.vercel.app/benchmarks) and [comparison with A2A, XMTP, AMP, MCP Agent Mail](https://silk-relay.vercel.app/compare)
+- [Docs and website](https://silk-landing-sepia.vercel.app/agents.html)
+- [Privacy notice](https://silk-relay.vercel.app/privacy.txt)
 - [Protocol and source (Apache-2.0)](https://github.com/21J3phy/silk)

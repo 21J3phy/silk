@@ -173,11 +173,11 @@ func loadOwner(path string, passphrase func() (string, error)) (ed25519.PrivateK
 // Agent keys
 
 type keyFile struct {
-	Serial   uint32             `json:"serial"`
-	SignSeed []byte             `json:"sign_seed"`
-	KEM      []byte             `json:"kem"`
-	Legacy   map[uint32][]byte  `json:"previous_kem,omitempty"` // older format, read only
-	Previous map[uint32]oldKey  `json:"previous,omitempty"`     // serial -> retired KEM key
+	Serial   uint32            `json:"serial"`
+	SignSeed []byte            `json:"sign_seed"`
+	KEM      []byte            `json:"kem"`
+	Legacy   map[uint32][]byte `json:"previous_kem,omitempty"` // older format, read only
+	Previous map[uint32]oldKey `json:"previous,omitempty"`     // serial -> retired KEM key
 }
 
 type oldKey struct {
@@ -272,17 +272,17 @@ type Message struct {
 
 // Sent tracks an outbound message until it is acknowledged.
 type Sent struct {
-	ID         string `json:"id"`
-	Grant      string `json:"grant"`
-	To         string `json:"to"`
-	Seq        uint32 `json:"seq"`
-	SentMs     int64  `json:"sent_ms"`
-	LedgerIdx  int64  `json:"ledger_index"`
-	Frame      []byte `json:"frame,omitempty"` // kept until the relay accepts it (outbox)
-	Status     string `json:"status"`          // "queued", "accepted", outcome name, or "failed: code"
-	AckIdx     int64  `json:"ack_ledger_index,omitempty"`
-	Preview    string `json:"preview,omitempty"`
-	Hash       []byte `json:"hash,omitempty"` // SHA-256 of the frame, for ledger audits
+	ID        string `json:"id"`
+	Grant     string `json:"grant"`
+	To        string `json:"to"`
+	Seq       uint32 `json:"seq"`
+	SentMs    int64  `json:"sent_ms"`
+	LedgerIdx int64  `json:"ledger_index"`
+	Frame     []byte `json:"frame,omitempty"` // kept until the relay accepts it (outbox)
+	Status    string `json:"status"`          // "queued", "accepted", outcome name, or "failed: code"
+	AckIdx    int64  `json:"ack_ledger_index,omitempty"`
+	Preview   string `json:"preview,omitempty"`
+	Hash      []byte `json:"hash,omitempty"` // SHA-256 of the frame, for ledger audits
 }
 
 // GrantInfo is a conversation the agent can use.
@@ -368,6 +368,9 @@ type agentState struct {
 	Sent       []*Sent                  `json:"sent"`
 	Contacts   map[string]*Contact      `json:"contacts"`
 	Handles    map[string]string        `json:"handles,omitempty"` // @handle -> agent ID pinned on first use
+	// OwnerRequests are owner operations waiting for a signature from the
+	// owner's device (see owner.go), keyed by a hash of what is signed.
+	OwnerRequests map[string]*OwnerRequest `json:"owner_requests,omitempty"`
 }
 
 func newState() *agentState {
@@ -415,6 +418,11 @@ func (s *agentState) trim(now int64) {
 	for id, in := range s.InIntros {
 		if in.Status != "pending" && now-in.ExpiresMs > keepMs {
 			delete(s.InIntros, id)
+		}
+	}
+	for id, r := range s.OwnerRequests {
+		if now-r.CreatedMs > keepMs {
+			delete(s.OwnerRequests, id)
 		}
 	}
 }

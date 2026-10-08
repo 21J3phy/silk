@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -72,9 +73,12 @@ func (a *Agent) Trust(ctx context.Context, ref string, wholeOwner, remove bool) 
 
 // PublishPolicy signs (owner key) and submits the policy with the next serial.
 func (a *Agent) PublishPolicy(ctx context.Context, p *PolicyConfig) (*relay.Result, error) {
-	owner, err := a.c.OwnerKey()
-	if err != nil {
-		return nil, err
+	var owner ed25519.PrivateKey
+	if a.ownerHere() {
+		var err error
+		if owner, err = a.c.OwnerKey(); err != nil {
+			return nil, err
+		}
 	}
 	pol := &wire.Policy{Agent: a.ID, Serial: p.Serial + 1, Created: a.c.Now().UnixMilli()}
 	if p.SameOwner {
@@ -99,6 +103,23 @@ func (a *Agent) PublishPolicy(ctx context.Context, p *PolicyConfig) (*relay.Resu
 	if len(pol.Owners) > wire.MaxPolicyOwners || len(pol.Agents) > wire.MaxPolicyAgents {
 		return nil, errors.New("policy lists are too long")
 	}
+	if owner == nil {
+		var need *OwnerSignatureNeeded
+		err := a.withState(func(st *agentState) error {
+			for k, r := range st.OwnerRequests { // a newer policy replaces one still waiting
+				if r.Op == "trust" {
+					delete(st.OwnerRequests, k)
+				}
+			}
+			cp := *p
+			need = st.addOwnerRequest(&OwnerRequest{Op: "trust", Body: pol.Unsigned(a.ownerPub()), Policy: &cp, CreatedMs: pol.Created})
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return nil, need
+	}
 	pol.Sign(owner)
 	res, err := a.c.Submit(ctx, pol.Raw)
 	if err != nil {
@@ -114,12 +135,23 @@ func (a *Agent) CreateInvite(ttl time.Duration) (string, error) {
 	if ttl <= 0 || ttl > wire.MaxTicketTTL {
 		return "", fmt.Errorf("invite lifetime must be between 1s and %v", wire.MaxTicketTTL)
 	}
+	t := &wire.Ticket{Recipient: a.ID, Expires: a.c.Now().Add(ttl).UnixMilli()}
+	rand.Read(t.TicketID[:])
+	if !a.ownerHere() {
+		var need *OwnerSignatureNeeded
+		err := a.withState(func(st *agentState) error {
+			need = st.addOwnerRequest(&OwnerRequest{Op: "invite", Body: t.Unsigned(a.ownerPub()), CreatedMs: a.c.Now().UnixMilli()})
+			return nil
+		})
+		if err != nil {
+			return "", err
+		}
+		return "", need
+	}
 	owner, err := a.c.OwnerKey()
 	if err != nil {
 		return "", err
 	}
-	t := &wire.Ticket{Recipient: a.ID, Expires: a.c.Now().Add(ttl).UnixMilli()}
-	rand.Read(t.TicketID[:])
 	t.Sign(owner)
 	return t.String(), nil
 }

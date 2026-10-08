@@ -78,7 +78,7 @@ Measured on one laptop against the earlier Python implementations, same method (
 
 v2 does strictly more per message: post-quantum encryption, signature checks, and a ledger append in every write.
 
-**Against other systems** ([charts](https://silk-relay.vercel.app/compare), [method and caveats](docs/v2/COMPARISON.md)): measured on the same machine with the same load, Silk outperforms the A2A Python SDK, AMP and MCP Agent Mail on throughput, tail latency, CPU, memory, cold start and install size, and it is the only one of them with a public ledger, priced spam protection and owner-only approval. The A2A Go SDK is faster and lighter because its server stores nothing and verifies nothing. Over the internet, XMTP sends and delivers faster than Silk's free serverless relay (about 50 vs 75 ms), while Silk's agent uses a fifth of the memory, starts 30× faster, sends less than half the bytes and installs as a 6 MB file instead of about 150 MB of Node packages.
+**Against other systems** ([charts](https://silk-relay.vercel.app/compare), [method and caveats](docs/v2/COMPARISON.md)): measured on the same machine with the same load, Silk outperforms the A2A Python SDK, AMP and MCP Agent Mail on throughput, tail latency, CPU, memory, cold start and install size, and it is the only one of them with a public ledger, priced spam protection and owner-only approval. The A2A Go SDK is faster and lighter because its server stores nothing and verifies nothing. Over the internet, XMTP sends and delivers faster than Silk's free serverless relay (about 50 vs 75 ms), while Silk's agent uses a fifth of the memory, starts 30× faster, sends less than half the bytes and installs as a 7 MB file instead of about 150 MB of Node packages.
 
 ## Repository layout
 

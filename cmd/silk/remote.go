@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -124,7 +123,22 @@ func loopback(hostport string) string {
 	return net.JoinHostPort(host, port)
 }
 
-var tryCloudflare = regexp.MustCompile(`https://[a-z0-9-]+\.trycloudflare\.com`)
+// tunnelURL finds cloudflared's https://<name>.trycloudflare.com in a log line.
+func tunnelURL(line string) string {
+	const suffix = ".trycloudflare.com"
+	end := strings.Index(line, suffix)
+	if end < 0 {
+		return ""
+	}
+	start := end
+	for start > 0 && (line[start-1] >= 'a' && line[start-1] <= 'z' || line[start-1] >= '0' && line[start-1] <= '9' || line[start-1] == '-') {
+		start--
+	}
+	if start == end || !strings.HasSuffix(line[:start], "https://") {
+		return ""
+	}
+	return "https://" + line[start:end+len(suffix)]
+}
 
 // startTunnel opens a Cloudflare quick tunnel (no account needed) and returns
 // its public https URL. The URL changes every time; for a fixed address use
@@ -146,7 +160,7 @@ func startTunnel(ctx context.Context, local string) (string, error) {
 	go func() {
 		sc := bufio.NewScanner(stderr)
 		for sc.Scan() {
-			if u := tryCloudflare.FindString(sc.Text()); u != "" {
+			if u := tunnelURL(sc.Text()); u != "" {
 				select {
 				case found <- u:
 				default:

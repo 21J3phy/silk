@@ -63,30 +63,30 @@ func (k Kind) String() string {
 // Suite 1: HPKE MLKEM768-X25519 (X-Wing) + HKDF-SHA256 + AES-256-GCM for
 // handshakes, AES-256-GCM with ratcheted keys for messages, Ed25519 signatures.
 const (
-	Suite1        = 1
-	KEMPublicLen  = 1216
-	KEMEncLen     = 1120
-	SigLen        = ed25519.SignatureSize
-	PubLen        = ed25519.PublicKeySize
-	AEADTagLen    = 16
-	IDLen         = 16
-	HashLen       = 32
-	MaxFrame      = 64 << 10
-	MaxPlaintext  = 32 << 10
-	MaxNote       = 1024
-	MaxIntroTTL   = 7 * 24 * time.Hour
-	MaxGrantTTL   = 366 * 24 * time.Hour
-	MaxMsgTTL     = 7 * 24 * time.Hour
-	MaxBudget     = 1_000_000
-	MaxRate       = 600
-	MaxClockSkew  = 5 * time.Minute
-	MaxPoWBits    = 40
+	Suite1       = 1
+	KEMPublicLen = 1216
+	KEMEncLen    = 1120
+	SigLen       = ed25519.SignatureSize
+	PubLen       = ed25519.PublicKeySize
+	AEADTagLen   = 16
+	IDLen        = 16
+	HashLen      = 32
+	MaxFrame     = 64 << 10
+	MaxPlaintext = 32 << 10
+	MaxNote      = 1024
+	MaxIntroTTL  = 7 * 24 * time.Hour
+	MaxGrantTTL  = 366 * 24 * time.Hour
+	MaxMsgTTL    = 7 * 24 * time.Hour
+	MaxBudget    = 1_000_000
+	MaxRate      = 600
+	MaxClockSkew = 5 * time.Minute
+	MaxPoWBits   = 40
 	// MaxTime bounds every timestamp (Unix ms, year ~37,600) so lifetime
 	// arithmetic can never overflow.
-	MaxTime int64 = 1 << 50
-	MaxLabelLen   = 32
-	MaxHandleLen  = 32
-	MaxScopeLen   = 32
+	MaxTime      int64 = 1 << 50
+	MaxLabelLen        = 32
+	MaxHandleLen       = 32
+	MaxScopeLen        = 32
 )
 
 // Signature domains. Each signed object uses its own domain so a signature
@@ -219,20 +219,20 @@ func Millis(t time.Time) int64 { return t.UnixMilli() }
 // Cert: an owner-signed delegation binding an agent address to agent keys.
 
 type Cert struct {
-	OwnerPub  [PubLen]byte
-	Label     string
-	Handle    string
-	Serial    uint32
-	SignPub   [PubLen]byte
-	Suite     uint16
-	KEMPub    []byte
-	Created   int64
-	Expires   int64
-	MinPoW    uint8
-	Flags     uint8
-	OwnerSig  [SigLen]byte
-	AgentSig  [SigLen]byte
-	Raw       []byte
+	OwnerPub [PubLen]byte
+	Label    string
+	Handle   string
+	Serial   uint32
+	SignPub  [PubLen]byte
+	Suite    uint16
+	KEMPub   []byte
+	Created  int64
+	Expires  int64
+	MinPoW   uint8
+	Flags    uint8
+	OwnerSig [SigLen]byte
+	AgentSig [SigLen]byte
+	Raw      []byte
 }
 
 // CertAcceptsIntros is the policy flag allowing unsolicited contact requests.
@@ -580,8 +580,13 @@ const (
 	DirAB = 0 // intro sender -> granting recipient
 	DirBA = 1 // granting recipient -> intro sender
 
-	msgFlagDir   = 1
-	msgFlagReply = 2
+	msgFlagDir     = 1
+	msgFlagReply   = 2
+	msgFlagRatchet = 4
+
+	// RatchetHeaderLen is the size of the cleartext, authenticated ratchet
+	// header that starts CT when Msg.Ratchet is set (see package seal).
+	RatchetHeaderLen = 49
 )
 
 type Msg struct {
@@ -591,6 +596,7 @@ type Msg struct {
 	Created int64
 	TTL     uint32 // seconds
 	ReplyTo *ID
+	Ratchet bool // CT starts with a RatchetHeaderLen-byte ratchet header
 	CT      []byte
 	Sig     [SigLen]byte
 	Raw     []byte
@@ -605,6 +611,9 @@ func (m *Msg) Header() []byte {
 	flags := m.Dir & msgFlagDir
 	if m.ReplyTo != nil {
 		flags |= msgFlagReply
+	}
+	if m.Ratchet {
+		flags |= msgFlagRatchet
 	}
 	w.u8(flags)
 	w.u32(m.Seq)
@@ -645,10 +654,11 @@ func DecodeMsg(b []byte) (*Msg, error) {
 	r.header(KindMsg)
 	r.fixed(m.GrantID[:])
 	flags := r.u8()
-	if r.err == nil && flags&^(msgFlagDir|msgFlagReply) != 0 {
+	if r.err == nil && flags&^(msgFlagDir|msgFlagReply|msgFlagRatchet) != 0 {
 		r.fail("unknown message flags")
 	}
 	m.Dir = flags & msgFlagDir
+	m.Ratchet = flags&msgFlagRatchet != 0
 	m.Seq = r.u32()
 	m.Created = r.i64()
 	m.TTL = r.u32()
@@ -657,7 +667,11 @@ func DecodeMsg(b []byte) (*Msg, error) {
 		r.fixed(id[:])
 		m.ReplyTo = &id
 	}
-	m.CT = r.bytes32(1+AEADTagLen, MaxPlaintext+1+AEADTagLen, "ciphertext")
+	overhead := 1 + AEADTagLen
+	if m.Ratchet {
+		overhead += RatchetHeaderLen
+	}
+	m.CT = r.bytes32(overhead, MaxPlaintext+overhead, "ciphertext")
 	r.fixed(m.Sig[:])
 	if err := r.done(); err != nil {
 		return nil, err

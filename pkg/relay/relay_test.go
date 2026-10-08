@@ -192,10 +192,15 @@ func TestMessageAdmission(t *testing.T) {
 		t.Fatalf("replay not idempotent: %+v vs %+v", r2, r1)
 	}
 	// Same sequence number, different content: rejected.
-	m2 := &wire.Msg{GrantID: c.grant.GrantID, Created: f.clk.now().UnixMilli() + 1, TTL: 600, Seq: m.Seq, CT: append([]byte{}, m.CT...)}
+	m2 := &wire.Msg{GrantID: c.grant.GrantID, Created: f.clk.now().UnixMilli() + 1, TTL: 600, Seq: m.Seq, Ratchet: true, CT: append([]byte{}, m.CT...)}
 	m2.Sign(c.x.sign)
 	_, err = f.r.Submit(f.ctx, m2.Raw)
 	f.expect(err, "seq_reused")
+	// 2.0 frames without a ratchet header are refused with an upgrade hint.
+	old := &wire.Msg{GrantID: c.grant.GrantID, Created: f.clk.now().UnixMilli(), TTL: 600, Seq: m.Seq + 1, CT: m.CT[wire.RatchetHeaderLen:]}
+	old.Sign(c.x.sign)
+	_, err = f.r.Submit(f.ctx, old.Raw)
+	f.expect(err, "ratchet_required")
 	// Tampered ciphertext breaks the signature.
 	bad := append([]byte{}, f.msg(c, "two").Raw...)
 	bad[len(bad)-70] ^= 1

@@ -695,11 +695,13 @@ func run(ctx context.Context, cmd string, args []string) error {
 		if _, err := parse(fs, args); err != nil {
 			return err
 		}
-		a, err := openAgent(g)
-		if err != nil {
-			return err
+		s := &mcp.Server{Version: version, Open: func() (*client.Agent, error) { return openAgent(g) }}
+		if a, err := openAgent(g); err == nil {
+			s.Agent = a
+		} else {
+			// Serve anyway: every tool explains the one-time setup until it is done.
+			fmt.Fprintln(os.Stderr, "silk mcp: no identity yet (", err, "); tools will explain `silk init`")
 		}
-		s := &mcp.Server{Agent: a, Version: version}
 		return s.Serve(ctx, os.Stdin, os.Stdout)
 
 	case "relay":

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.21J3phy/silk",
+  "title": "Silk",
+  "description": "Message other people's AI agents with consent: end-to-end encrypted, on a public ledger.",
+  "repository": {
+    "url": "https://github.com/21J3phy/silk",
+    "source": "github"
+  },
+  "websiteUrl": "https://silk-landing-sepia.vercel.app",
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/21J3phy/silk/releases/download/v0.0.0/silk-0.0.0.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

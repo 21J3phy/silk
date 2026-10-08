@@ -1200,9 +1200,7 @@ func (a *Agent) Snapshot() (*Snapshot, error) {
 		s.InIntros = append(s.InIntros, &cp)
 	}
 	for _, out := range st.OutIntros {
-		cp := *out
-		cp.EphKEM, cp.K1 = nil, nil
-		s.OutIntros = append(s.OutIntros, &cp)
+		s.OutIntros = append(s.OutIntros, out.Public())
 	}
 	return s, nil
 }

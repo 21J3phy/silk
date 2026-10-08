@@ -324,6 +324,15 @@ type OutIntro struct {
 	Frame     []byte `json:"frame,omitempty"` // kept until the relay confirms it
 }
 
+// Public is a copy without the handshake secrets (EphKEM, K1), safe to show
+// or print: with them and the peer's approval, anyone could derive the
+// conversation's keys.
+func (o *OutIntro) Public() *OutIntro {
+	cp := *o
+	cp.EphKEM, cp.K1 = nil, nil
+	return &cp
+}
+
 // InIntro is a contact request awaiting the owner's decision.
 type InIntro struct {
 	ID         string `json:"id"`

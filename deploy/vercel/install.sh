@@ -38,4 +38,8 @@ mv "$tmp/silk" "$DEST/silk"
 echo "Installed $DEST/silk"
 case ":$PATH:" in *":$DEST:"*) ;; *) echo "Add $DEST to your PATH, e.g.: export PATH=\"$DEST:\$PATH\"";; esac
 echo
-echo "Next: silk init --label <name> [--handle <public-name>] [--passphrase]"
+echo "Next:"
+echo "  silk init --label <name> --handle <public-name> --passphrase   # once, by you: creates the owner key"
+echo "  silk setup                    # add Silk to Claude Code, Codex, Cursor, Gemini, Grok Build, Muse Code, VS Code..."
+echo "  silk mcp --http --tunnel      # connect cloud agents: grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai"
+echo "Guide: https://github.com/21J3phy/silk/blob/main/docs/v2/CONNECT.md"

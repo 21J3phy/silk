@@ -26,7 +26,6 @@ import (
 
 	"github.com/21J3phy/silk/pkg/client"
 	"github.com/21J3phy/silk/pkg/ledger"
-	"github.com/21J3phy/silk/pkg/mcp"
 	"github.com/21J3phy/silk/pkg/relay"
 	"github.com/21J3phy/silk/pkg/wire"
 )
@@ -84,7 +83,11 @@ Verification
   silk doctor                                   check setup: relay, clock, keys, ledger pin, MCP
 
 Agents & servers
-  silk mcp                                      run the MCP server (stdio) for an AI agent
+  silk mcp                                      run the MCP server (stdio) for an agent on this machine
+  silk mcp --http [--tunnel] [--public-url URL] serve it over HTTPS for cloud agents (grok.com, Grok Bot,
+                                                Meta Muse, OpenAI Dots, ChatGPT, claude.ai); --reset disconnects them
+  silk setup [agent...]                         add Silk's MCP server to every installed AI agent (or the ones named)
+  silk setup --list | --print <agent> | --remove [agent...]   show support, print a manual snippet, or undo
   silk relay [--addr :8790] [--db FILE]         run a relay
   silk update [--check]                         install the latest signed, ledger-logged release
   silk version
@@ -258,7 +261,11 @@ func run(ctx context.Context, cmd string, args []string) error {
 		out(g, map[string]any{"address": a.Address(), "id": a.ID.String(), "ledger_index": res.LedgerIdx, "relay": c.Config.Relay}, func(w io.Writer) {
 			fmt.Fprintf(w, "Agent %q registered in %v.\n  address: %s\n  id:      %s\n  relay:   %s\n  ledger:  entry #%d\n  home:    %s\n",
 				a.Label, time.Since(start).Round(time.Millisecond), a.Address(), a.ID, c.Config.Relay, res.LedgerIdx, g.home)
-			fmt.Fprintf(w, "\nConnect an AI agent (Claude Code example):\n  claude mcp add silk -- silk mcp --agent %s\n", a.Label)
+			sel := ""
+			if a.Label != c.Config.DefaultAgent {
+				sel = " --agent " + a.Label
+			}
+			fmt.Fprintf(w, "\nConnect your AI agents:\n  silk setup%s                 agents on this computer (Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Muse Code, ...)\n  silk mcp --http --tunnel%s   cloud agents (grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai)\n", sel, sel)
 		})
 		return nil
 
@@ -316,7 +323,7 @@ func run(ctx context.Context, cmd string, args []string) error {
 		if err != nil {
 			return err
 		}
-		out(g, o, func(w io.Writer) {
+		out(g, o.Public(), func(w io.Writer) {
 			fmt.Fprintf(w, "Contact request %s sent to %s (%d-bit stamp in %dms, ledger #%d).\nTheir owner must approve it; run `silk inbox` to see when they do.\n",
 				o.ID, peerName(o.To, o.ToHandle), o.PoWBits, o.PoWMs, o.LedgerIdx)
 		})
@@ -691,18 +698,7 @@ func run(ctx context.Context, cmd string, args []string) error {
 		return nil
 
 	case "mcp":
-		fs := newFlags("mcp", g)
-		if _, err := parse(fs, args); err != nil {
-			return err
-		}
-		s := &mcp.Server{Version: version, Open: func() (*client.Agent, error) { return openAgent(g) }}
-		if a, err := openAgent(g); err == nil {
-			s.Agent = a
-		} else {
-			// Serve anyway: every tool explains the one-time setup until it is done.
-			fmt.Fprintln(os.Stderr, "silk mcp: no identity yet (", err, "); tools will explain `silk init`")
-		}
-		return s.Serve(ctx, os.Stdin, os.Stdout)
+		return runMCP(ctx, g, args)
 
 	case "relay":
 		return runRelay(ctx, args)
@@ -798,6 +794,9 @@ func run(ctx context.Context, cmd string, args []string) error {
 		}
 		return doctor(ctx, g)
 
+	case "setup":
+		return runSetup(ctx, g, args)
+
 	case "self-verify":
 		fs := newFlags("self-verify", g)
 		if _, err := parse(fs, args); err != nil {
@@ -845,7 +844,6 @@ func run(ctx context.Context, cmd string, args []string) error {
 	}
 	return fmt.Errorf("unknown command %q (see `silk help`)", cmd)
 }
-
 
 // publishRelease signs a manifest for prebuilt binaries and records it on the
 // relay's ledger. Maintainer-only: needs the release signing key.
@@ -1049,7 +1047,7 @@ func doctor(ctx context.Context, g *globals) error {
 		} else {
 			check(false, "ledger audit for "+label, aerr.Error())
 		}
-		fmt.Printf("    MCP: claude mcp add silk-%s -- silk mcp --agent %s\n", label, label)
+		fmt.Printf("    connect agents: silk setup --agent %s (cloud agents: silk mcp --http --tunnel --agent %s)\n", label, label)
 	}
 	if ok {
 		fmt.Println("All good.")

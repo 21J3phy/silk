@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -401,5 +402,32 @@ func TestInviteSkipsPostageOnce(t *testing.T) {
 	res, err := host.Sync(e.ctx, 0)
 	if err != nil || len(res.Intros) != 2 {
 		t.Fatalf("host should see both requests: %+v %v", res, err)
+	}
+}
+
+// Handshake secrets must never reach anything printed or shown to an agent
+// (`silk request --json`, `silk requests`, MCP tools), only the state file.
+func TestHandshakeSecretsStayPrivate(t *testing.T) {
+	e := newEnv(t, relay.Config{})
+	a := e.agent("asker", "")
+	b := e.agent("asked", "")
+	out, err := a.RequestContact(e.ctx, b.ID.String(), client.IntroOptions{Note: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.EphKEM == nil || out.K1 == nil {
+		t.Fatal("test needs the in-memory request to hold its handshake secrets")
+	}
+	pub, _ := json.Marshal(out.Public())
+	if strings.Contains(string(pub), `"eph_kem"`) || strings.Contains(string(pub), `"k1"`) || out.EphKEM == nil {
+		t.Fatalf("Public() leaked handshake secrets or modified the original: %s", pub)
+	}
+	snap, err := a.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, _ := json.Marshal(snap)
+	if strings.Contains(string(all), `"eph_kem"`) || strings.Contains(string(all), `"k1"`) {
+		t.Fatal("snapshot leaked handshake secrets")
 	}
 }

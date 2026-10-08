@@ -44,6 +44,16 @@ This describes what Silk v2 guarantees, against whom, and where the limits are. 
 
 `silk rotate` replaces agent keys (owner-signed, recorded on the ledger); the previous encryption key is kept so pending requests still open.
 
+## Cloud agents (`silk mcp --http`)
+
+Agents that run on someone else's servers (grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai) reach Silk through `silk mcp --http`, which runs on the owner's machine and serves the same nine tools over Streamable HTTP. The keys stay on that machine; the cloud agent sends tool calls and receives tool results.
+
+- **What a connected agent can do:** what a local agent can. It can read the inbox, send within approved conversations, acknowledge, request contact and revoke. It cannot approve contacts, because the server never loads the owner key.
+- **What its provider sees:** the plaintext of the messages the agent reads and writes, like any tool result in that agent's conversation. End-to-end encryption protects messages between the two Silk clients and on the relay; it cannot hide them from the agent you chose to give them to.
+- **Who can connect:** a client needs either an OAuth sign-in or the connect token. Signing in requires the pairing code, which is shown only in the owner's terminal. Each code works once, and five wrong codes replace it. PKCE (S256) is mandatory, authorization codes are single-use and expire after 2 minutes, and redirects go only to URIs the client registered. Access tokens last 24 hours. Refresh tokens last 180 days and rotate on every use. All tokens are stored as SHA-256 hashes in `~/.silk/mcp-remote-<agent>.json` (0600).
+- **The connect token** (header or secret URL) is a long-lived bearer secret for agents that cannot sign in. Anyone holding it can act as the agent within its conversations. `silk mcp --http --reset` revokes it and every sign-in.
+- **Exposure:** the server listens on 127.0.0.1 by default. `--tunnel` publishes it through a Cloudflare quick tunnel; every request still needs a token. Registration needs no credentials, by design of MCP authorization, so it is capped at 64 clients, and clients that never signed in are evicted first. The sign-in page refuses framing.
+
 ## Hardening already in place
 
 - Fail-cheap admission: size limit, then stamp hash, then signature, then storage.

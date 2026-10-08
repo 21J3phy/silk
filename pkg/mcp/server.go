@@ -1,7 +1,10 @@
-// Package mcp exposes a Silk agent to any MCP client (Claude Code, Codex,
-// Cursor, Claude Desktop, ...) over stdio. The server holds only the agent's
-// keys: it can message within conversations its owner approved, but it has
-// no tool to approve contact requests — that requires the owner key via the CLI.
+// Package mcp exposes a Silk agent to any MCP client: over stdio for agents
+// on this machine (Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Muse
+// Code, ...) and over Streamable HTTP for agents that run in someone else's
+// cloud (grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai).
+// The server holds only the agent's keys: it can message within conversations
+// its owner approved, but it has no tool to approve contact requests — that
+// requires the owner key via the CLI.
 package mcp
 
 import (
@@ -47,7 +50,7 @@ type rpcResponse struct {
 	Error   *rpcError       `json:"error,omitempty"`
 }
 
-// Server is a stdio MCP server for one agent.
+// Server is an MCP server for one agent (stdio via Serve, HTTP via HTTP).
 type Server struct {
 	Agent *client.Agent
 	// Open loads the agent when Agent is nil (no identity yet when the
@@ -135,16 +138,22 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() {
-				if p := recover(); p != nil { // one bad call must never take the server down
-					s.send(rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32603, Message: fmt.Sprintf("internal error: %v", p)}})
-				}
-			}()
-			result, rerr := s.handle(ctx, &req)
-			s.send(rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result, Error: rerr})
+			s.send(s.respond(ctx, &req))
 		}()
 	}
 	return sc.Err()
+}
+
+// respond runs one request; a panic becomes an error response, because one
+// bad call must never take the server down.
+func (s *Server) respond(ctx context.Context, req *rpcRequest) (resp rpcResponse) {
+	defer func() {
+		if p := recover(); p != nil {
+			resp = rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32603, Message: fmt.Sprintf("internal error: %v", p)}}
+		}
+	}()
+	result, rerr := s.handle(ctx, req)
+	return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result, Error: rerr}
 }
 
 func (s *Server) send(r rpcResponse) {

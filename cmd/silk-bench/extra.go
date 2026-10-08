@@ -170,10 +170,10 @@ func spamSim(ctx context.Context, args []string) error {
 	//    attacker must hold every slot at >= B bits, re-buying a slot each time
 	//    one is outbid.
 	type block struct {
-		Bits          uint8              `json:"legit_bits"`
-		LegitLaptopS  float64            `json:"legit_seconds_laptop"`
-		AttackerS     map[string]float64 `json:"attacker_seconds_to_block"`
-		Ratio         float64            `json:"attacker_to_legit_work_ratio"`
+		Bits         uint8              `json:"legit_bits"`
+		LegitLaptopS float64            `json:"legit_seconds_laptop"`
+		AttackerS    map[string]float64 `json:"attacker_seconds_to_block"`
+		Ratio        float64            `json:"attacker_to_legit_work_ratio"`
 	}
 	var blocks []block
 	for b := uint8(20); b <= 32; b += 2 {
@@ -198,11 +198,11 @@ func spamSim(ctx context.Context, args []string) error {
 		penalty = append(penalty, [2]float64{float64(d), float64(relay.IntroPrice(cfg, 0, 0, float64(d)))})
 	}
 	return writeResult(*outPath, map[string]any{
-		"model": "Uses the relay's IntroPrice and AuctionPrice functions. Each pending stranger request needs a fresh identity (registration stamp) because a sender may have one pending request per recipient. Trusted senders (same owner, or on the recipient owner's signed policy) pay 0 bits and bypass the queue entirely.",
+		"model":  "Uses the relay's IntroPrice and AuctionPrice functions. Each pending stranger request needs a fresh identity (registration stamp) because a sender may have one pending request per recipient. Trusted senders (same owner, or on the recipient owner's signed policy) pay 0 bits and bypass the queue entirely.",
 		"config": map[string]any{"register_bits": def.RegisterBits, "intro_base_bits": def.IntroBaseBits, "max_surge_bits": def.MaxSurgeBits, "queue_slots": cap},
-		"fill": fills, "blocking": blocks, "price_by_load": table, "price_by_declines": penalty, "legit_hps": *laptop,
-		"old_rule": "Iteration 1: when the queue was full, every new stranger request was rejected (recipient_full), so an attacker only had to fill it once.",
-		"new_rule": "Iteration 2: full queue = auction. A legitimate stranger evicts the cheapest pending request by paying one bit more; trusted contacts never queue.",
+		"fill":   fills, "blocking": blocks, "price_by_load": table, "price_by_declines": penalty, "legit_hps": *laptop,
+		"old_rule":  "Iteration 1: when the queue was full, every new stranger request was rejected (recipient_full), so an attacker only had to fill it once.",
+		"new_rule":  "Iteration 2: full queue = auction. A legitimate stranger evicts the cheapest pending request by paying one bit more; trusted contacts never queue.",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }
@@ -307,7 +307,7 @@ func ledgerBench(ctx context.Context, args []string) error {
 		pts = append(pts, p)
 	}
 	return writeResult(*outPath, map[string]any{"points": pts, "leaf_bytes": ledger.LeafLen,
-		"note": "Append measured in 1000-leaf transactions on SQLite (synchronous=NORMAL). hash_chain_proof_bytes is what a simple hash chain would need to prove the same entry (all later links), for comparison.",
+		"note":      "Append measured in 1000-leaf transactions on SQLite (synchronous=NORMAL). hash_chain_proof_bytes is what a simple hash chain would need to prove the same entry (all later links), for comparison.",
 		"timestamp": time.Now().UTC().Format(time.RFC3339)})
 }
 
@@ -356,14 +356,14 @@ func crashTest(ctx context.Context, args []string) error {
 	var mu sync.Mutex
 	var all []acked
 	type roundRes struct {
-		Round        int   `json:"round"`
+		Round         int   `json:"round"`
 		KilledAfterMs int64 `json:"killed_after_ms"`
-		Acked        int   `json:"acknowledged"`
-		Lost         int   `json:"lost"`
-		Ambiguous    int   `json:"in_flight_at_kill"`
-		LedgerBefore int64 `json:"ledger_size_before_kill"`
-		LedgerAfter  int64 `json:"ledger_size_after_restart"`
-		Consistent   bool  `json:"consistent"`
+		Acked         int   `json:"acknowledged"`
+		Lost          int   `json:"lost"`
+		Ambiguous     int   `json:"in_flight_at_kill"`
+		LedgerBefore  int64 `json:"ledger_size_before_kill"`
+		LedgerAfter   int64 `json:"ledger_size_after_restart"`
+		Consistent    bool  `json:"consistent"`
 	}
 	var results []roundRes
 	totalLost := 0
@@ -462,8 +462,8 @@ func crashTest(ctx context.Context, args []string) error {
 	srv.cmd.Process.Kill()
 	srv.cmd.Wait()
 	return writeResult(*outPath, map[string]any{"rounds": results, "total_acknowledged": len(all), "total_lost": totalLost,
-		"method": "Relay (SQLite WAL, synchronous=FULL, group commit) under 16 concurrent senders is killed with SIGKILL at a random time, restarted on the same database, and every previously acknowledged message is looked up by its SHA-256 commitment; its ledger index must match the index returned at acknowledgment. The post-restart checkpoint must be provably consistent with a checkpoint fetched before the kill.",
-		"note": strings.TrimSpace("Requests in flight at the kill have an unknown outcome to the client; the protocol makes retrying them safe (identical frames are deduplicated)."),
+		"method":    "Relay (SQLite WAL, synchronous=FULL, group commit) under 16 concurrent senders is killed with SIGKILL at a random time, restarted on the same database, and every previously acknowledged message is looked up by its SHA-256 commitment; its ledger index must match the index returned at acknowledgment. The post-restart checkpoint must be provably consistent with a checkpoint fetched before the kill.",
+		"note":      strings.TrimSpace("Requests in flight at the kill have an unknown outcome to the client; the protocol makes retrying them safe (identical frames are deduplicated)."),
 		"timestamp": time.Now().UTC().Format(time.RFC3339)})
 }
 

@@ -47,7 +47,7 @@ Agents get these MCP tools: `silk_whoami`, `silk_inbox`, `silk_send`, `silk_ack`
 
 1. **Identity.** You hold an owner key. Each agent gets its own keys, delegated by you. An agent's address is a hash of your key, so nobody can swap in different keys for it.
 2. **Consent.** A contact request carries proof-of-work postage (or an invite). Only your owner key can approve it, with a message budget, a rate and an expiry. Either side can revoke at any time.
-3. **Encryption.** Approval completes an HPKE handshake (ML-KEM-768 + X25519). Each message then gets a one-time AES-256-GCM key from a hash ratchet. The relay never sees plaintext.
+3. **Encryption.** Approval completes an HPKE handshake (ML-KEM-768 + X25519). Each message then gets a one-time AES-256-GCM key from a hash ratchet, and every turn of the conversation mixes in a fresh X25519 exchange, so a stolen session stops working after about one round trip. The relay never sees plaintext.
 4. **Ledger.** Every registration, request, approval, message, acknowledgment, revocation and software release is a leaf in a Merkle tree with signed checkpoints. `silk audit` proves your entries are included and that history was never rewritten.
 
 Details: [protocol](docs/v2/PROTOCOL.md) · [security model](docs/v2/SECURITY.md) · [self-hosting](docs/v2/SELF_HOSTING.md) · [benchmarks](docs/v2/BENCHMARKS.md) · [live charts](https://silk-relay.vercel.app/benchmarks)

@@ -1187,6 +1187,10 @@ func (r *Relay) submitMsg(ctx context.Context, frame []byte) (*Result, error) {
 	if err != nil {
 		return nil, malformed(err)
 	}
+	if !m.Ratchet {
+		// 2.0 clients never re-key a conversation after a key leak.
+		return nil, errf(400, "ratchet_required", "messages must carry a ratchet header; update your client (silk update)")
+	}
 	now := wire.Millis(r.now())
 	if !skewOK(m.Created, now) {
 		return nil, errf(400, "clock_skew", "message creation time is more than %v from relay time", wire.MaxClockSkew)

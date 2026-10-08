@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/hkdf"
 	"crypto/hmac"
@@ -78,20 +79,48 @@ func build(t *testing.T) map[string]any {
 		steps = append(steps, map[string]string{"chain_key": h(ck), "message_key": h(mac(ck, 1)), "nonce": h(mac(ck, 3)[:12])})
 		ck = mac(ck, 2)
 	}
-	// Encrypt "hello" as text at position 0 with the message header as AAD.
+	// Encrypt "hello" as text at position 0: CT = ratchet header || AES-GCM
+	// ciphertext, with the message header and ratchet header as AAD.
 	s, _ := seal.NewSession(grant, root, true)
 	em := &wire.Msg{GrantID: grant, Created: 1791400001000, TTL: 3600}
 	if err := s.Encrypt(em, seal.TypeText, []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
-	blk, _ := aes.NewCipher(mac(ab, 1))
-	g, _ := cipher.NewGCM(blk)
-	want := g.Seal(nil, mac(ab, 3)[:12], append([]byte{seal.TypeText}, "hello"...), em.Header())
-	if !bytes.Equal(want, em.CT) {
+	gcmAt := func(ck []byte) cipher.AEAD {
+		blk, _ := aes.NewCipher(mac(ck, 1))
+		g, _ := cipher.NewGCM(blk)
+		return g
+	}
+	hb := em.CT[:wire.RatchetHeaderLen]
+	want := gcmAt(ab).Seal(append([]byte{}, hb...), mac(ab, 3)[:12], append([]byte{seal.TypeText}, "hello"...), append(em.Header(), hb...))
+	if !em.Ratchet || !bytes.Equal(want, em.CT) || !bytes.Equal(hb[:17], append([]byte{1}, make([]byte, 16)...)) {
 		t.Fatal("ratchet encryption disagrees with the specification")
 	}
+	// The same message with a fixed ratchet key, for other implementations.
+	x0, _ := ecdh.X25519().NewPrivateKey(seed(10))
+	fixed := append(append([]byte{1}, make([]byte, 16)...), x0.PublicKey().Bytes()...)
+	fm := &wire.Msg{GrantID: grant, Dir: wire.DirAB, Created: 1791400001000, TTL: 3600, Ratchet: true}
+	fct := gcmAt(ab).Seal(append([]byte{}, fixed...), mac(ab, 3)[:12], append([]byte{seal.TypeText}, "hello"...), append(fm.Header(), fixed...))
+
+	// A ratchet step: B (key seed 11, advertised in its epoch 0) is re-keyed by
+	// A's fresh key (seed 12) at the start of A->B epoch 1, position 3.
+	xb, _ := ecdh.X25519().NewPrivateKey(seed(11))
+	xa, _ := ecdh.X25519().NewPrivateKey(seed(12))
+	dh, _ := xa.ECDH(xb.PublicKey())
+	ck3 := mac(mac(mac(ab, 2), 2), 2)
+	next, err := seal.StepKey(ck3, dh, grant.String(), wire.DirAB, 1, 3, xa.PublicKey().Bytes(), xb.PublicKey().Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
 	v["ratchet"] = map[string]any{"root": h(root), "chain_ab": h(ab), "chain_ba": h(ba), "steps_ab": steps,
-		"encrypt_text_hello_at_seq0": map[string]string{"header": h(em.Header()), "ciphertext": h(em.CT)}}
+		"encrypt_text_hello_at_seq0": map[string]string{"ratchet_private": h(seed(10)), "header": h(fm.Header()), "ciphertext": h(fct)},
+		"step_ab_epoch1_at_seq3": map[string]string{"chain_key_at_seq3": h(ck3), "receiver_private": h(seed(11)), "sender_private": h(seed(12)),
+			"x25519": h(dh), "grant_text": grant.String(), "new_chain_key": h(next)}}
+
+	// A frame carrying a ratchet header (flag 4).
+	rm := &wire.Msg{GrantID: grant, Dir: wire.DirBA, Seq: 7, Created: 1791400001000, TTL: 3600, Ratchet: true, CT: bytes.Repeat([]byte{0x33}, wire.RatchetHeaderLen+17)}
+	rm.Sign(agent)
+	v["msg_frame_ratchet"] = map[string]any{"frame": h(rm.Raw), "header": h(rm.Header())}
 
 	// Proof of work: smallest valid nonce at 8 bits for a fixed prefix.
 	d := pow.Digest(pow.DomainIntro, []byte("silk test prefix"))

@@ -299,6 +299,9 @@ type GrantInfo struct {
 	ExpiresMs  int64  `json:"expires_ms"`
 	Status     string `json:"status"`
 	LedgerIdx  int64  `json:"ledger_index"`
+	// KeyTurns counts fresh key exchanges in this conversation (both
+	// directions); each one locks out anyone holding older session keys.
+	KeyTurns uint32 `json:"key_turns,omitempty"`
 }
 
 // OutIntro is a contact request this agent sent.

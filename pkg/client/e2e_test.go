@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -187,6 +188,36 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if len(res.Revoked) != 1 {
 		t.Fatalf("revocation not delivered: %+v", res)
+	}
+}
+
+func TestKeysTurnDuringConversation(t *testing.T) {
+	e := newEnv(t, relay.Config{})
+	a, b := e.agent("claude", "turn-a"), e.agent("codex", "turn-b")
+	grant := e.connect(a, b, "ratchet")
+	for i := range 4 {
+		for _, p := range [][2]*client.Agent{{a, b}, {b, a}} {
+			body := fmt.Sprintf("turn %d from %s", i, p[0].Address())
+			if _, err := p[0].Send(e.ctx, grant, body, client.SendOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			res, err := p[1].Sync(e.ctx, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Messages) != 1 || res.Messages[0].Body != body || res.Messages[0].Error != "" {
+				t.Fatalf("turn %d: %+v", i, res.Messages)
+			}
+		}
+	}
+	for _, ag := range []*client.Agent{a, b} {
+		snap, err := ag.Snapshot()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(snap.Grants) != 1 || snap.Grants[0].KeyTurns < 6 {
+			t.Fatalf("keys did not turn: %+v", snap.Grants[0])
+		}
 	}
 }
 

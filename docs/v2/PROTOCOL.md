@@ -49,7 +49,17 @@ Suite 1 is the only suite: HPKE (RFC 9180) with KEM `MLKEM768-X25519` (X-Wing, d
 
 Because `K2` depends on a key that is deleted after use, recording traffic and later stealing both parties' long-term keys does not reveal the conversation (forward secrecy). Because both halves use ML-KEM-768 hybridized with X25519, a future quantum computer breaking X25519 does not either. Binding the sender and recipient IDs, serials and terms into HPKE `info` and the root salt prevents unknown-key-share and cross-conversation splicing.
 
-**Messages.** Two symmetric hash ratchets: `chain_ab = HKDF-Expand(root, "silk/v2 chain a>b", 32)`, `chain_ba = HKDF-Expand(root, "silk/v2 chain b>a", 32)`. For position `n` with chain key `ck`: `mk = HMAC(ck, 0x01)`, `nonce = HMAC(ck, 0x03)[0:12]`, next `ck = HMAC(ck, 0x02)`. Each key encrypts exactly one message, `seq = n`, with AES-256-GCM, additional data = the message header (everything before the ciphertext). The plaintext is `content_type (1 text, 2 JSON) || body`. Receivers keep at most 2,000 skipped keys for out-of-order delivery and delete each key after use. Messages are additionally signed so the relay can authenticate the sender without reading content.
+**Messages.** Two symmetric hash ratchets: `chain_ab = HKDF-Expand(root, "silk/v2 chain a>b", 32)`, `chain_ba = HKDF-Expand(root, "silk/v2 chain b>a", 32)`. For position `n` with chain key `ck`: `mk = HMAC(ck, 0x01)`, `nonce = HMAC(ck, 0x03)[0:12]`, next `ck = HMAC(ck, 0x02)`. Each key encrypts exactly one message, `seq = n` (counted per direction across epochs), with AES-256-GCM. The plaintext is `content_type (1 text, 2 JSON) || body`. Receivers keep at most 2,000 skipped keys for out-of-order delivery and delete each key after use. Messages are additionally signed so the relay can authenticate the sender without reading content.
+
+**Ratchet header and re-keying.** Message flag `0x04` is required since 2.1 (the relay rejects frames without it with `ratchet_required`). `CT` then starts with a 49-byte cleartext header: `version (1) || epoch u32 || start u32 || ref u32 || seen u32 || pub [32]`, and the AEAD additional data is the message header followed by this ratchet header. `pub` is the sender's X25519 ratchet key for its current send `epoch`, `start` is the first `seq` of that epoch, `ref` is the receiver epoch whose key keyed it, and `seen` is the newest receiver epoch the sender has decrypted. Each side starts at epoch 0 (the plain chain) with a random ratchet key. A sender starts epoch `e+1` at its next message when it has decrypted a newer peer key than the one its current epoch used **and** the peer reports `seen ≥ e` (epoch 0 needs only a peer key); the second condition guarantees receivers only ever advance one epoch at a time. Re-keying at position `start`, with the chain key `ck` at that position:
+
+```
+dh  = X25519(sender_fresh_private, receiver_pub[ref])
+ck' = HKDF-SHA256(ikm = dh, salt = HMAC(ck, 0x04),
+                  info = "silk/v2 ratchet" 0x00 || grant_id_text || dir || epoch u32 || start u32 || sender_pub || receiver_pub, 32)
+```
+
+The receiver derives the same key with its private key for `ref`, stores the old chain's remaining keys up to `start - 1` as skipped keys, and keeps its own ratchet keys until the peer reports having seen a newer one. Anyone who steals a session can follow it only until both sides have exchanged fresh keys. Frames without the flag (2.0) are still decrypted when already queued, as epoch 0.
 
 ## 5. Consent, budgets and spam postage
 
@@ -95,7 +105,7 @@ Frames are POSTed as `application/octet-stream`. Errors are `{"error":{"status",
 
 ## 8. Test vectors
 
-`docs/v2/test-vectors.json` pins identities, address derivation, signed frames, the message ratchet and AES-GCM output, a proof-of-work stamp, ledger hashing and a signed read header for fixed seeds. `go test ./pkg/vectors` fails if the implementation drifts from them; other implementations should reproduce every value.
+`docs/v2/test-vectors.json` pins identities, address derivation, signed frames, the message ratchet, a re-keying step and AES-GCM output, a proof-of-work stamp, ledger hashing and a signed read header for fixed seeds. `go test ./pkg/vectors` fails if the implementation drifts from them; other implementations should reproduce every value.
 
 ## 9. Versioning and agility
 

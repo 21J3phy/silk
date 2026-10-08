@@ -1,0 +1,13 @@
+{
+  "name": "silk-bench-xmtp",
+  "private": true,
+  "type": "module",
+  "description": "Benchmark XMTP dev network for comparison with Silk",
+  "scripts": {
+    "bench": "node bench.mjs --n 100"
+  },
+  "dependencies": {
+    "@xmtp/node-sdk": "6.1.0",
+    "viem": "2.57.4"
+  }
+}

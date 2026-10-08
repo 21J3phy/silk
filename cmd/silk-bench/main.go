@@ -55,6 +55,8 @@ func main() {
 		err = loadExisting(ctx, os.Args[2:])
 	case "memprobe":
 		err = memProbe(ctx, os.Args[2:])
+	case "foreign":
+		err = foreign(ctx, os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown subcommand %q", os.Args[1])
 	}
@@ -234,20 +236,20 @@ type throughputLevel struct {
 }
 
 type result struct {
-	System           string            `json:"system"`
-	Language         string            `json:"language"`
-	Machine          map[string]any    `json:"machine"`
-	Timestamp        string            `json:"timestamp"`
-	LimitsOverridden []string          `json:"limits_overridden"`
-	SendThroughput   []throughputLevel `json:"send_throughput"`
-	RoundtripMs      pct               `json:"roundtrip_ms"`
-	WireBytes        map[string]int64  `json:"wire_bytes"`
+	System           string             `json:"system"`
+	Language         string             `json:"language"`
+	Machine          map[string]any     `json:"machine"`
+	Timestamp        string             `json:"timestamp"`
+	LimitsOverridden []string           `json:"limits_overridden"`
+	SendThroughput   []throughputLevel  `json:"send_throughput"`
+	RoundtripMs      pct                `json:"roundtrip_ms"`
+	WireBytes        map[string]int64   `json:"wire_bytes"`
 	RSSMB            map[string]float64 `json:"rss_mb"`
-	CPUMsPerMsg      float64           `json:"cpu_ms_per_msg"`
-	ColdStartMs      float64           `json:"cold_start_ms"`
-	InstallMB        float64           `json:"install_mb"`
-	Extra            map[string]any    `json:"extra,omitempty"`
-	Notes            []string          `json:"notes"`
+	CPUMsPerMsg      float64            `json:"cpu_ms_per_msg"`
+	ColdStartMs      float64            `json:"cold_start_ms"`
+	InstallMB        float64            `json:"install_mb"`
+	Extra            map[string]any     `json:"extra,omitempty"`
+	Notes            []string           `json:"notes"`
 }
 
 func machine() map[string]any {

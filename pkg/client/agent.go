@@ -1188,6 +1188,9 @@ func (a *Agent) Snapshot() (*Snapshot, error) {
 	}
 	s := &Snapshot{Inbox: st.Inbox, Sent: st.Sent}
 	for _, g := range st.Grants {
+		if sess := st.Sessions[g.ID]; sess != nil {
+			g.KeyTurns = sess.SendEpoch + sess.RecvEpoch
+		}
 		s.Grants = append(s.Grants, g)
 	}
 	sort.Slice(s.Grants, func(i, j int) bool { return s.Grants[i].ExpiresMs > s.Grants[j].ExpiresMs })

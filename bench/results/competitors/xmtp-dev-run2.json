@@ -1,0 +1,250 @@
+{
+  "system": "xmtp-dev",
+  "timestamp": "2026-10-08T05:51:12Z",
+  "machine": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "versions": {
+    "@xmtp/node-sdk": "6.1.0",
+    "@xmtp/node-bindings": "1.11.0",
+    "@xmtp/content-type-primitives": "3.0.0",
+    "viem": "2.57.4",
+    "@xmtp/node-bindings (nested under content-type-primitives, installed but not loaded)": "1.8.0",
+    "node": "v25.9.0",
+    "env": "dev",
+    "libxmtp": "1.11.0"
+  },
+  "params": {
+    "n": 100,
+    "warmup": 10,
+    "roundtrip_samples": 30,
+    "identities": 3,
+    "text": "Can we coordinate a time? This is untrusted message data.",
+    "text_chars": 57,
+    "timeout_ms": 30000
+  },
+  "install_mb": {
+    "node_modules": 552.4,
+    "node_modules_without_other_platform_binaries": 147.2,
+    "native_binding_packages": [
+      {
+        "package": "@xmtp/node-bindings@1.8.0",
+        "path": "node_modules/@xmtp/content-type-primitives/node_modules/@xmtp/node-bindings",
+        "mb": 212.9,
+        "host_binary_mb": 26.4,
+        "platform_binaries": 7
+      },
+      {
+        "package": "@xmtp/node-bindings@1.11.0",
+        "path": "node_modules/@xmtp/node-bindings",
+        "mb": 262.6,
+        "host_binary_mb": 43.7,
+        "platform_binaries": 6
+      }
+    ],
+    "per_package": {
+      "@adraffy/ens-normalize": 0.5,
+      "@noble/ciphers": 1.1,
+      "@noble/curves": 2.3,
+      "@noble/hashes": 1.7,
+      "@scure/base": 0.2,
+      "@scure/bip32": 0.1,
+      "@scure/bip39": 0.5,
+      "@xmtp/content-type-primitives": 213,
+      "@xmtp/node-bindings": 262.6,
+      "@xmtp/node-sdk": 0.2,
+      "abitype": 2,
+      "eventemitter3": 0.1,
+      "isows": 0.1,
+      "ox": 11.4,
+      "viem": 56.5,
+      "ws": 0.2
+    },
+    "node_runtime": {
+      "path": "/opt/homebrew/Cellar/node/25.9.0_1/bin/node",
+      "binary_mb": 0.1,
+      "linked_non_system_libs": 21,
+      "linked_libs_mb": 109.7,
+      "total_mb": 109.8
+    }
+  },
+  "sdk_import_ms": 94.734,
+  "register_ms": {
+    "median": 474.462,
+    "runs": [
+      628.601,
+      390.551,
+      474.462
+    ],
+    "cold_median_incl_import": 571.631
+  },
+  "reopen_ms": {
+    "median": 256.247,
+    "runs": [
+      256.247,
+      254.179,
+      257.383
+    ],
+    "cold_median_incl_import": 350.38
+  },
+  "send_ms": {
+    "samples": 100,
+    "p50": 49.385,
+    "p90": 57.633,
+    "p99": 73.487,
+    "mean": 51.099
+  },
+  "deliver_ms": {
+    "samples": 100,
+    "p50": 52.073,
+    "p90": 75.963,
+    "p99": 87.454,
+    "mean": 59.698
+  },
+  "roundtrip_ms": {
+    "samples": 30,
+    "p50": 125.77,
+    "p90": 151.475,
+    "p99": 417.505,
+    "mean": 146.317
+  },
+  "lost": {
+    "deliver": 0,
+    "roundtrip": 0,
+    "warmup_delivered": "10/10"
+  },
+  "rss_mb": {
+    "sender": {
+      "idle": 108.7,
+      "peak": 115,
+      "peak_during_timed_loop": 113.6
+    },
+    "receiver": {
+      "idle": 107.8,
+      "peak": 114.5
+    }
+  },
+  "cpu_ms_per_msg": 6.29,
+  "receiver_cpu_ms_per_msg": 4.183,
+  "bytes_per_msg": {
+    "sender": {
+      "in_per_msg": 604,
+      "out_per_msg": 732,
+      "total_per_msg": 1336,
+      "connections_before": 1,
+      "connections_after": 1,
+      "connections_opened": 0,
+      "connections_closed": 0,
+      "remotes": [
+        "3.136.169.76:443"
+      ]
+    },
+    "receiver": {
+      "in_per_msg": 387,
+      "out_per_msg": 0,
+      "total_per_msg": 387,
+      "connections_before": 1,
+      "connections_after": 1,
+      "connections_opened": 0,
+      "connections_closed": 0,
+      "remotes": [
+        "3.136.169.76:443"
+      ]
+    },
+    "encoded_content_bytes": 98,
+    "stored_encrypted_message_bytes": [
+      269,
+      269,
+      269,
+      269,
+      269
+    ],
+    "method": "nettop per-connection cumulative bytes (TLS+HTTP/2+gRPC framing included) snapshotted before/after the timed loop, divided by n"
+  },
+  "api_calls_per_msg": {
+    "sendGroupMessages": 1,
+    "queryGroupMessages": 1,
+    "getIdentityUpdatesV2": 0.02
+  },
+  "messages_sent": {
+    "app_messages": 170,
+    "sender_api_totals": {
+      "uploadKeyPackage": 1,
+      "fetchKeyPackage": 2,
+      "sendGroupMessages": 141,
+      "sendWelcomeMessages": 1,
+      "queryGroupMessages": 142,
+      "queryWelcomeMessages": 2,
+      "subscribeMessages": 1,
+      "subscribeWelcomes": 1,
+      "publishIdentityUpdate": 1,
+      "getIdentityUpdatesV2": 7,
+      "getInboxIds": 1,
+      "verifySmartContractWalletSignature": 0
+    },
+    "receiver_api_totals": {
+      "uploadKeyPackage": 1,
+      "fetchKeyPackage": 0,
+      "sendGroupMessages": 31,
+      "sendWelcomeMessages": 0,
+      "queryGroupMessages": 32,
+      "queryWelcomeMessages": 2,
+      "subscribeMessages": 2,
+      "subscribeWelcomes": 1,
+      "publishIdentityUpdate": 1,
+      "getIdentityUpdatesV2": 4,
+      "getInboxIds": 1,
+      "verifySmartContractWalletSignature": 0
+    }
+  },
+  "network": {
+    "endpoint": "https://grpc.dev.xmtp.network:443",
+    "cname": [
+      "grpc20240205223531595100000001-73f9948239d0c2bb.elb.us-east-2.amazonaws.com"
+    ],
+    "ipv4": [
+      "3.132.13.169",
+      "3.136.169.76"
+    ],
+    "location": "AWS us-east-2 (Ohio), from the ELB CNAME",
+    "tcp_connect_ms": {
+      "samples": 5,
+      "p50": 20.48,
+      "p90": 22.383,
+      "p99": 23.286,
+      "mean": 20.574
+    }
+  },
+  "extra": {
+    "loop_seconds": 6.091,
+    "dm_create_ms": 170.12,
+    "sender_create_ms": 386.864,
+    "receiver_create_ms": 380.352,
+    "sdk_import_runs_ms": [
+      201.294,
+      95.336,
+      97.169,
+      94.133,
+      92.745,
+      94.112
+    ],
+    "native_libs_loaded": [
+      "node_modules/@xmtp/node-bindings/dist/bindings_node.darwin-arm64.node"
+    ],
+    "conversation_id": "fbc0c36781aef2118f1dc7c1e7ff791a",
+    "db_dir": "/tmp/silk-competitors/xmtp-db/run-2026-10-08T05-50-41-403Z"
+  },
+  "notes": [
+    "XMTP env \"dev\" via @xmtp/node-sdk createBackend(); gRPC endpoint https://grpc.dev.xmtp.network:443 -> grpc20240205223531595100000001-73f9948239d0c2bb.elb.us-east-2.amazonaws.com (3.132.13.169, 3.136.169.76); location: AWS us-east-2 (Ohio), from the ELB CNAME. TCP connect to it: p50 20.48 ms.",
+    "Client options mirror @xmtp/agent-sdk defaults: disableDeviceSync=true, appVersion set; local SQLite DB encrypted with a random 32-byte key; DBs under /tmp/silk-competitors/xmtp-db.",
+    "send_ms = conversation.sendText() promise (non-optimistic: MLS-encrypt, publish, and wait for the intent to be confirmed by the network).",
+    "deliver_ms = hrtime just before A.sendText() to the moment B's already-open streamAllMessages() iterator yields that message id (B in another process; process.hrtime is a system-wide monotonic clock). Sends are sequential: the next send starts only after delivery.",
+    "roundtrip_ms = A.sendText() -> B stream -> B.sendText(\"ok\") -> A stream yields the reply.",
+    "register_ms = generate key + Client.create() (inbox id lookup, local DB create, signature, identity + key package publish). reopen_ms = Client.build() on the existing DB (still does a network inbox-id lookup). Both measured after SDK import in a fresh process; cold_* adds the import of @xmtp/node-sdk + viem.",
+    "cpu_ms_per_msg = sender process.cpuUsage (all threads incl. the Rust/tokio runtime) over the timed loop / n. RSS sampled every 20 ms.",
+    "B explicitly allows A's inbox (preferences.setConsentStates) before A creates the DM.",
+    "encoded_content_bytes = protobuf EncodedContent for the text (content layer, before MLS). stored_encrypted_message_bytes = MLS ciphertext sizes of the newest timed messages as stored by the dev node (read via its REST gateway)."
+  ]
+}

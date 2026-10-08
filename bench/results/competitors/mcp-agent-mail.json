@@ -1,0 +1,86 @@
+{
+  "system": "MCP Agent Mail (Dicklesworthstone/mcp_agent_mail)",
+  "language": "Python 3.12.12 (FastMCP / MCP SDK Streamable HTTP on FastAPI + uvicorn 0.40.0 with uvloop/httptools; SQLAlchemy 2.0.45 async + aiosqlite 0.22.1; GitPython 3.1.46 + system git)",
+  "machine": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "timestamp": "2026-10-08T05:53:12Z",
+  "limits_overridden": null,
+  "send_throughput": [
+    {
+      "concurrency": 1,
+      "requests": 2000,
+      "seconds": 348.68,
+      "msgs_per_sec": 5.7,
+      "p50_ms": 173.567,
+      "p90_ms": 241.816,
+      "p99_ms": 289.759,
+      "errors": 0
+    },
+    {
+      "concurrency": 4,
+      "requests": 2000,
+      "seconds": 322.01,
+      "msgs_per_sec": 6.2,
+      "p50_ms": 583.521,
+      "p90_ms": 1112.513,
+      "p99_ms": 1924.492,
+      "errors": 0
+    },
+    {
+      "concurrency": 16,
+      "requests": 2000,
+      "seconds": 320.098,
+      "msgs_per_sec": 6.2,
+      "p50_ms": 1740.867,
+      "p90_ms": 5576.155,
+      "p99_ms": 12031.149,
+      "errors": 0
+    },
+    {
+      "concurrency": 64,
+      "requests": 2000,
+      "seconds": 1433.664,
+      "msgs_per_sec": 0.6,
+      "p50_ms": 22952.778,
+      "p90_ms": 50286.023,
+      "p99_ms": 58789.642,
+      "errors": 1165
+    }
+  ],
+  "roundtrip_ms": {
+    "samples": 300,
+    "p50": 105.845,
+    "p90": 116.606,
+    "p99": 137.993,
+    "mean": 106.997
+  },
+  "wire_bytes": {
+    "roundtrip": 5058,
+    "send": 2077
+  },
+  "rss_mb": {
+    "idle": 131.3,
+    "peak": 212.5
+  },
+  "cpu_ms_per_msg": 119.435,
+  "cold_start_ms": 885,
+  "install_mb": 238,
+  "extra": {
+    "cold_start_runs_ms": [
+      857.747,
+      878.031,
+      884.96,
+      889.463,
+      2205.2
+    ],
+    "driver": "silk-bench foreign go1.26.0",
+    "version": "git 3fad5ec672869f81d2ca0a4c525dde004ac96f45 (main, 2026-09-29; 28 commits after tag v0.3.4); pyproject version 0.3.4; FastMCP 2.13.0.2 (serverInfo.version), mcp SDK 1.25.0"
+  },
+  "notes": [
+    "STORAGE (default product behavior, kept): every message goes to two stores. (1) SQLite through SQLAlchemy async/aiosqlite at DATABASE_URL, with PRAGMA journal_mode=WAL and synchronous=NORMAL: a commit appends to the WAL without fsync, and fsync happens only at checkpoint (wal_autocheckpoint=1000 pages). Writes are atomic but recent commits are not durable across power loss. There is also an FTS5 index (fts_messages: subject, body). (2) A git repository under STORAGE_ROOT: 3 markdown files with JSON front matter per message plus a commit by GitPython. GitPython writes the objects and index itself, with no fsync. It opens a new Repo per commit, and each commit spawned 3 git child processes: `git diff --cached` for is_dirty, plus `git cat-file --batch` and `git cat-file --batch-check` helpers. A PATH shim in the smoke run counted 18 git execs for 6 commits. Those children are not in the server PID's RSS/CPU, so silk-bench foreign's ps-of-the-PID sampling understates this system's CPU and RSS per send. Sample the process tree, or add children's rusage. In the smoke run, sequential send_message took about 115 ms, fetch_inbox about 9 ms and acknowledge_message about 8 ms. Agent profiles are git-committed at registration. Acks and reads touch SQLite only. The archive grows by 3 files and 1 commit per message, and nothing is ever deleted. DURABILITY: no per-message fsync in either store. ENCRYPTION: none at rest, none in transit (plain HTTP on localhost; the docs recommend TLS at a reverse proxy). Message bodies are plaintext markdown in the git repo and the web UI at /mail. AUTH: transport is the static bearer token configured above (constant-time compare). The server has optional JWT/JWKS + RBAC, unused here. Agent identity uses per-agent registration tokens (random bearer strings checked with hmac.compare_digest) passed as sender_token / registration_token on every call. A successful call also binds the agent to the MCP session. There are no signatures, no message signing and no ledger: 'verified_sender' means the token matched. CONTACT: per-recipient policy (default auto) checked on every send, set to open for the benchmark. BACKGROUND WORK (defaults on): a file-reservation cleanup worker every 60 s, an hourly stale-agent auto-retire sweep (24 h inactivity threshold, so irrelevant here), and an FD health monitor. The FastMCP context also logs a DEBUG 'Sending INFO to client' line per tool call even with LOG_LEVEL=WARNING.",
+    "Same driver and method as the Silk v2 run (silk-bench compare): fresh server per level, 100 untimed warmup sends, 2000 timed closed-loop sends, one keep-alive connection per client, server RSS/CPU from ps, bytes counted at the socket."
+  ]
+}

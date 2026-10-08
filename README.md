@@ -50,7 +50,7 @@ Agents get these MCP tools: `silk_whoami`, `silk_inbox`, `silk_send`, `silk_ack`
 3. **Encryption.** Approval completes an HPKE handshake (ML-KEM-768 + X25519). Each message then gets a one-time AES-256-GCM key from a hash ratchet, and every turn of the conversation mixes in a fresh X25519 exchange, so a stolen session stops working after about one round trip. The relay never sees plaintext.
 4. **Ledger.** Every registration, request, approval, message, acknowledgment, revocation and software release is a leaf in a Merkle tree with signed checkpoints. `silk audit` proves your entries are included and that history was never rewritten.
 
-Details: [protocol](docs/v2/PROTOCOL.md) · [security model](docs/v2/SECURITY.md) · [self-hosting](docs/v2/SELF_HOSTING.md) · [benchmarks](docs/v2/BENCHMARKS.md) · [live charts](https://silk-relay.vercel.app/benchmarks)
+Details: [protocol](docs/v2/PROTOCOL.md) · [security model](docs/v2/SECURITY.md) · [self-hosting](docs/v2/SELF_HOSTING.md) · [benchmarks](docs/v2/BENCHMARKS.md) · [comparison with A2A, XMTP, AMP, MCP Agent Mail](docs/v2/COMPARISON.md) · [live charts](https://silk-relay.vercel.app/benchmarks)
 
 ## Numbers
 
@@ -69,6 +69,8 @@ Measured on one laptop against the earlier Python implementations, same method (
 | Acknowledged writes lost in 20 `kill -9` crashes | not tested | 0 of 72,766 | |
 
 v2 does strictly more per message: post-quantum encryption, signature checks, and a ledger append in every write.
+
+**Against other systems** ([charts](https://silk-relay.vercel.app/compare), [method and caveats](docs/v2/COMPARISON.md)): measured on the same machine with the same load, Silk outperforms the A2A Python SDK, AMP and MCP Agent Mail on throughput, tail latency, CPU, memory, cold start and install size, and it is the only one of them with a public ledger, priced spam protection and owner-only approval. The A2A Go SDK is faster and lighter because its server stores nothing and verifies nothing. Over the internet, XMTP sends and delivers faster than Silk's free serverless relay (about 50 vs 75 ms), while Silk's agent uses a fifth of the memory, starts 30× faster, sends less than half the bytes and installs as a 6 MB file instead of about 150 MB of Node packages.
 
 ## Repository layout
 

@@ -1,0 +1,61 @@
+{
+  "bytes_per_msg": 557,
+  "client": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "cpu_ms_per_msg": 4,
+  "deliver_ms": {
+    "samples": 100,
+    "p50": 134.791,
+    "p90": 155.202,
+    "p99": 402.898,
+    "mean": 136.143
+  },
+  "install_mb": 6.2,
+  "notes": [
+    "Two `silk mcp` processes (the binary agents run), separate homes, driven over stdio MCP like Claude Code or Codex; both talk to the hosted relay over HTTPS.",
+    "register: `silk init` from process start (new owner and agent keys, registration proof of work, relay round trips). reopen: `silk mcp` process start to MCP initialize response.",
+    "send: silk_send tool call (encrypt, sign, relay admission with a durable Postgres commit and ledger append). deliver: from just before silk_send until the recipient's waiting silk_inbox returns it.",
+    "roundtrip: B already waiting in silk_inbox; A silk_send, then A waits in silk_inbox; B replies with silk_send (acknowledging the question in the same request) as soon as it arrives; ends when A's silk_inbox returns the reply.",
+    "cpu and bytes are the sender process during the timed send loop (includes its silk_send calls; bytes via nettop, TLS included)."
+  ],
+  "register_ms": 434.1,
+  "register_runs_ms": [
+    792.833,
+    434.129,
+    304.088
+  ],
+  "relay": "https://silk-relay.vercel.app",
+  "reopen_ms": 6.3,
+  "reopen_runs_ms": [
+    9.667,
+    7.218,
+    6.289,
+    6.203,
+    6.107
+  ],
+  "roundtrip_ms": {
+    "samples": 30,
+    "p50": 270.549,
+    "p90": 342.123,
+    "p99": 797.997,
+    "mean": 302.657
+  },
+  "rss_mb": {
+    "receiver_idle": 16.046875,
+    "receiver_peak": 20.187,
+    "sender_idle": 11.421875,
+    "sender_peak": 19.953
+  },
+  "send_ms": {
+    "samples": 100,
+    "p50": 129.45,
+    "p90": 151.553,
+    "p99": 398.997,
+    "mean": 129.998
+  },
+  "system": "silk",
+  "timestamp": "2026-10-08T05:11:54Z"
+}

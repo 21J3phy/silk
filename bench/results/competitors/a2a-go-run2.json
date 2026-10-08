@@ -1,0 +1,86 @@
+{
+  "system": "a2a-go",
+  "language": "Go (github.com/a2aproject/a2a-go/v2 v2.6.0, go1.26.0 darwin/arm64, std net/http; built with CGO_ENABLED=0 go build -trimpath -ldflags \"-s -w\")",
+  "machine": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "timestamp": "2026-10-08T06:44:24Z",
+  "limits_overridden": null,
+  "send_throughput": [
+    {
+      "concurrency": 1,
+      "requests": 2000,
+      "seconds": 0.192,
+      "msgs_per_sec": 10394.5,
+      "p50_ms": 0.08,
+      "p90_ms": 0.131,
+      "p99_ms": 0.323,
+      "errors": 0
+    },
+    {
+      "concurrency": 4,
+      "requests": 2000,
+      "seconds": 0.077,
+      "msgs_per_sec": 25915.7,
+      "p50_ms": 0.126,
+      "p90_ms": 0.221,
+      "p99_ms": 0.711,
+      "errors": 0
+    },
+    {
+      "concurrency": 16,
+      "requests": 2000,
+      "seconds": 0.068,
+      "msgs_per_sec": 29430.6,
+      "p50_ms": 0.405,
+      "p90_ms": 0.936,
+      "p99_ms": 2.177,
+      "errors": 0
+    },
+    {
+      "concurrency": 64,
+      "requests": 2000,
+      "seconds": 0.065,
+      "msgs_per_sec": 30536.7,
+      "p50_ms": 1.813,
+      "p90_ms": 3.841,
+      "p99_ms": 5.886,
+      "errors": 0
+    }
+  ],
+  "roundtrip_ms": {
+    "samples": 300,
+    "p50": 0.105,
+    "p90": 0.129,
+    "p99": 0.166,
+    "mean": 0.103
+  },
+  "wire_bytes": {
+    "roundtrip": 904,
+    "send": 904
+  },
+  "rss_mb": {
+    "idle": 10.7,
+    "peak": 22.6
+  },
+  "cpu_ms_per_msg": 0.16,
+  "cold_start_ms": 6.4,
+  "install_mb": 6.3,
+  "extra": {
+    "cold_start_runs_ms": [
+      6.27,
+      6.394,
+      6.396,
+      6.408,
+      6.884
+    ],
+    "driver": "silk-bench foreign go1.26.0",
+    "version": "v2.6.0"
+  },
+  "notes": [
+    "A2A spec 1.0 JSON-RPC binding (method 'SendMessage'). Built like the SDK's examples/helloworld/server/jsonrpc: http.ServeMux with '/' -\u003e a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(executor)) and a2asrv.WellKnownAgentCardPath -\u003e a2asrv.NewStaticAgentCardHandler(card). Default std-lib http.Server (only ReadHeaderTimeout=10s set). GOMAXPROCS and GOGC are left at their defaults, so it uses every core. NewHandler defaults: taskstore.NewInMemory and eventqueue.NewInMemoryManager, no concurrency limit, no logging interceptor (no per-request logs). Persistence: none. The executor yields a single agent Message (message-only interaction), so the task store is never written. The per-request event queue is destroyed after the reply. No disk I/O, no fsync. Auth/crypto: none - no TLS (plain HTTP on loopback), no authentication, no message signing or verification, unsigned agent card. The server does not check the A2A-Version header (it is sent anyway, to match the spec and the Python target). Errors come back as HTTP 200 with a JSON-RPC 'error' member. The server does not deduplicate on messageId. Success response: HTTP 200, headers Content-Type: application/json, Date, Content-Length; body {\"jsonrpc\":\"2.0\",\"id\":\u003crequest id\u003e,\"result\":{\"message\":{\"messageId\":\u003cserver uuidv7\u003e,\"contextId\":\u003cserver uuidv7\u003e,\"parts\":[{\"text\":\"ok\"}],\"role\":\"ROLE_AGENT\"}}} plus a trailing newline (json.Encoder). install_paths: one static stripped binary, 6,553,650 bytes. The module lives in bench/competitors/a2a-go with its own go.mod (module silkbench/a2a-go) and is independent of the repo root module.",
+    "Same driver and method as the Silk v2 run (silk-bench compare): fresh server per level, 100 untimed warmup sends, 2000 timed closed-loop sends, one keep-alive connection per client, server RSS/CPU from ps, bytes counted at the socket."
+  ]
+}

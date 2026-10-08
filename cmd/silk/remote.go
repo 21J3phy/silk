@@ -67,6 +67,9 @@ func runMCP(ctx context.Context, g *globals, args []string) error {
 		return err
 	}
 	local := "http://" + loopback(ln.Addr().String())
+	// Serve before opening the tunnel: its readiness check comes through it.
+	served := make(chan error, 1)
+	go func() { served <- h.Serve(ctx, ln) }()
 	if *tunnel {
 		u, err := startTunnel(ctx, local)
 		if err != nil {
@@ -99,7 +102,7 @@ conversations; keep them secret. Contact requests still need you: silk accept <i
 	if c := h.Clients(); len(c) > 0 {
 		fmt.Printf("\nConnected: %s (silk mcp --http --reset disconnects them all)\n", strings.Join(c, ", "))
 	}
-	return h.Serve(ctx, ln)
+	return <-served
 }
 
 func safeFile(s string) string {
@@ -173,9 +176,10 @@ func startTunnel(ctx context.Context, local string) (string, error) {
 	case u := <-found:
 		// A new quick-tunnel hostname takes a few seconds to resolve; wait
 		// so the URL printed is one a cloud agent can use right away.
+		check := tunnelCheckClient()
 		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) && ctx.Err() == nil {
-			resp, err := http.Get(u + "/.well-known/oauth-protected-resource")
+			resp, err := check.Get(u + "/.well-known/oauth-protected-resource")
 			if err == nil {
 				resp.Body.Close()
 				if resp.StatusCode == http.StatusOK {
@@ -191,4 +195,29 @@ func startTunnel(ctx context.Context, local string) (string, error) {
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
+}
+
+// tunnelCheckClient resolves through trycloudflare.com's own name servers,
+// which answer as soon as a tunnel exists. Asking this machine's resolver
+// (or any caching one) about a hostname before it exists caches "no such
+// host": the owner's browser opening the sign-in page would then fail for
+// minutes, even though cloud agents could reach the tunnel.
+func tunnelCheckClient() *http.Client {
+	server := "1.1.1.1:53"
+	if nss, err := net.LookupNS("trycloudflare.com"); err == nil && len(nss) > 0 {
+		if ips, err := net.LookupIP(strings.TrimSuffix(nss[0].Host, ".")); err == nil {
+			for _, ip := range ips {
+				if ip.To4() != nil {
+					server = net.JoinHostPort(ip.String(), "53")
+					break
+				}
+			}
+		}
+	}
+	resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "udp", server)
+	}}
+	dialer := &net.Dialer{Timeout: 5 * time.Second, Resolver: resolver}
+	return &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{DialContext: dialer.DialContext, TLSHandshakeTimeout: 5 * time.Second}}
 }

@@ -37,7 +37,7 @@ sums="$root/dist/release/SHA256SUMS-$ver"
 (cd "$dir" && shasum -a 256 silk-* && cd "$root/dist/release" && shasum -a 256 "silk-$ver.mcpb") > "$sums"
 gh release create "v$ver" -R 21J3phy/silk --target "$(git -C "$root" rev-parse HEAD)" --title "Silk $ver" --notes "$notes
 
-**Install** (macOS, Linux): \`curl -fsSL https://silk-relay.vercel.app/install.sh | sh\`, then \`silk init --label <name> --passphrase\` and \`claude mcp add silk -- silk mcp\`.
+**Install** (macOS, Linux): \`curl -fsSL https://silk-relay.vercel.app/install.sh | sh\`, then \`silk init --label <name> --passphrase\` and \`silk setup\` (adds Silk to Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Muse Code, VS Code and more). Cloud agents (grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai): \`silk mcp --http --tunnel\`. Guide: https://github.com/21J3phy/silk/blob/main/docs/v2/CONNECT.md
 **Update:** \`silk update\` installs a release only if it is signed with the pinned release key and recorded on the public ledger.
 **Claude Desktop:** download \`silk-$ver.mcpb\` and open it.
 **Verify by hand:** SHA-256 sums are in \`SHA256SUMS\`; the signed manifest is at https://silk-relay.vercel.app/v2/release/manifest." \

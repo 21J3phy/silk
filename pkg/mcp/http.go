@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -469,7 +469,13 @@ func (h *HTTP) evictClientsLocked() {
 	}
 }
 
-var consentPage = template.Must(template.New("consent").Parse(`<!doctype html>
+// consentPage is the sign-in page. It is built with html.EscapeString rather
+// than html/template: the template packages' reflection keeps the linker
+// from dropping unused methods anywhere in the binary (+3 MB).
+func consentPage(w io.Writer, client, agent, host, errMsg string, params map[string]string) {
+	e := html.EscapeString
+	var b strings.Builder
+	b.WriteString(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Connect to Silk</title>
 <style>
@@ -479,16 +485,29 @@ input{font:inherit;font-size:1.3rem;letter-spacing:.15em;text-transform:uppercas
 button{font:inherit;padding:.6rem 1.2rem;border-radius:6px;border:1px solid #111;background:#111;color:#fff;cursor:pointer}
 button.deny{background:#fff;color:#111;margin-left:.5rem}.err{color:#b00020}.small{color:#555;font-size:.9rem}
 </style></head><body>
-<h1>Connect {{.Client}} to Silk</h1>
-<p><b>{{.Client}}</b> wants to use your Silk agent <b>{{.Agent}}</b>: read its inbox and send messages in conversations you approved. It cannot approve new contacts; that stays with you.</p>
-<p class="small">After approving, you return to <code>{{.Host}}</code>.</p>
-{{if .Err}}<p class="err">{{.Err}}</p>{{end}}
-<form method="post" action="/authorize">
-{{range $k, $v := .Params}}<input type="hidden" name="{{$k}}" value="{{$v}}">{{end}}
+`)
+	fmt.Fprintf(&b, "<h1>Connect %s to Silk</h1>\n", e(client))
+	fmt.Fprintf(&b, "<p><b>%s</b> wants to use your Silk agent <b>%s</b>: read its inbox and send messages in conversations you approved. It cannot approve new contacts; that stays with you.</p>\n", e(client), e(agent))
+	fmt.Fprintf(&b, "<p class=\"small\">After approving, you return to <code>%s</code>.</p>\n", e(host))
+	if errMsg != "" {
+		fmt.Fprintf(&b, "<p class=\"err\">%s</p>\n", e(errMsg))
+	}
+	b.WriteString("<form method=\"post\" action=\"/authorize\">\n")
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(&b, "<input type=\"hidden\" name=\"%s\" value=\"%s\">", e(k), e(params[k]))
+	}
+	b.WriteString(`
 <label for="code">Pairing code from the terminal running <code>silk mcp --http</code></label>
 <input id="code" name="pairing_code" autocomplete="off" autofocus required maxlength="12" placeholder="XXXX-XXXX">
 <button type="submit" name="decision" value="approve">Approve</button><button class="deny" type="submit" name="decision" value="deny" formnovalidate>Deny</button>
-</form></body></html>`))
+</form></body></html>`)
+	io.WriteString(w, b.String())
+}
 
 func (h *HTTP) authorize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -544,21 +563,19 @@ func (h *HTTP) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, _ := url.Parse(redirect)
-	page := struct {
-		Client, Agent, Host, Err string
-		Params                   map[string]string
-	}{Client: c.Name, Agent: h.Agent, Host: u.Host, Params: map[string]string{}}
-	if page.Host == "" {
-		page.Host = u.Scheme + ":"
+	host := u.Host
+	if host == "" {
+		host = u.Scheme + ":"
 	}
+	params := map[string]string{}
 	for _, k := range []string{"response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope", "resource"} {
 		if v := q.Get(k); v != "" {
-			page.Params[k] = v
+			params[k] = v
 		}
 	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		consentPage.Execute(w, page)
+		consentPage(w, c.Name, h.Agent, host, "", params)
 		return
 	}
 	if q.Get("decision") != "approve" {
@@ -583,10 +600,9 @@ func (h *HTTP) authorize(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	if !ok {
 		time.Sleep(500 * time.Millisecond)
-		page.Err = "That pairing code is not right. Check the terminal running silk mcp --http (the code changes after 5 wrong tries)."
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		consentPage.Execute(w, page)
+		consentPage(w, c.Name, h.Agent, host, "That pairing code is not right. Use the newest code shown in the terminal running silk mcp --http (each code works once, and 5 wrong tries replace it).", params)
 		return
 	}
 	code := randToken("", 32)

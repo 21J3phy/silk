@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -113,9 +114,58 @@ func (h *httpAPI) wrap(next http.Handler) http.Handler {
 			writeErr(w, errf(429, "slow_down", "too many requests from this address"))
 			return
 		}
-		next.ServeHTTP(w, req)
+		next.ServeHTTP(newTimingWriter(w, h.r.store), req)
 	})
 }
+
+// timedStore is a store that reports cumulative database round trips and wait time.
+type timedStore interface {
+	Timing() (int64, time.Duration)
+}
+
+// timingWriter adds a Server-Timing header (relay time, and database time and
+// round trips when the store reports them) so clients can tell network from
+// server latency. Database figures are process-wide deltas, so they are
+// approximate when requests overlap.
+type timingWriter struct {
+	http.ResponseWriter
+	t0     time.Time
+	ts     timedStore
+	rt0    int64
+	db0    time.Duration
+	header bool
+}
+
+func newTimingWriter(w http.ResponseWriter, store any) *timingWriter {
+	tw := &timingWriter{ResponseWriter: w, t0: time.Now()}
+	if ts, ok := store.(timedStore); ok {
+		tw.ts = ts
+		tw.rt0, tw.db0 = ts.Timing()
+	}
+	return tw
+}
+
+func (w *timingWriter) WriteHeader(code int) {
+	if !w.header {
+		w.header = true
+		v := fmt.Sprintf("app;dur=%.1f", float64(time.Since(w.t0).Microseconds())/1000)
+		if w.ts != nil {
+			rt, db := w.ts.Timing()
+			v += fmt.Sprintf(", db;dur=%.1f;desc=\"%d round trips\"", float64((db-w.db0).Microseconds())/1000, rt-w.rt0)
+		}
+		w.ResponseWriter.Header().Set("Server-Timing", v)
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *timingWriter) Write(b []byte) (int, error) {
+	if !w.header {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *timingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (h *httpAPI) clientIP(req *http.Request) string {
 	if h.o.TrustProxy {

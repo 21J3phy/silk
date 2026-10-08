@@ -1,0 +1,85 @@
+{
+  "system": "AMP (Agent Messaging Protocol) relay — Fareground agent-messaging, PyPI fg-amp",
+  "language": "Python 3.12.12 (FastAPI 0.142 + uvicorn 0.54 with uvloop/httptools; cryptography 50.0.2 provides Ed25519, X25519, ML-KEM-768, ChaCha20-Poly1305)",
+  "machine": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "timestamp": "2026-10-08T06:44:42Z",
+  "limits_overridden": null,
+  "send_throughput": [
+    {
+      "concurrency": 1,
+      "requests": 2000,
+      "seconds": 2.981,
+      "msgs_per_sec": 670.9,
+      "p50_ms": 1.466,
+      "p90_ms": 1.849,
+      "p99_ms": 2.862,
+      "errors": 0
+    },
+    {
+      "concurrency": 4,
+      "requests": 2000,
+      "seconds": 1.557,
+      "msgs_per_sec": 1284.4,
+      "p50_ms": 3.013,
+      "p90_ms": 3.49,
+      "p99_ms": 4.997,
+      "errors": 0
+    },
+    {
+      "concurrency": 16,
+      "requests": 2000,
+      "seconds": 1.173,
+      "msgs_per_sec": 1704.4,
+      "p50_ms": 9.124,
+      "p90_ms": 10.966,
+      "p99_ms": 22.284,
+      "errors": 0
+    },
+    {
+      "concurrency": 64,
+      "requests": 2000,
+      "seconds": 1.069,
+      "msgs_per_sec": 1871.1,
+      "p50_ms": 34.094,
+      "p90_ms": 38.474,
+      "p99_ms": 59.498,
+      "errors": 0
+    }
+  ],
+  "roundtrip_ms": {
+    "samples": 300,
+    "p50": 3.814,
+    "p90": 4.181,
+    "p99": 4.576,
+    "mean": 3.856
+  },
+  "wire_bytes": {
+    "roundtrip": 5479
+  },
+  "rss_mb": {
+    "idle": 68.1,
+    "peak": 80.6
+  },
+  "cpu_ms_per_msg": 2.133,
+  "cold_start_ms": 277,
+  "install_mb": 40.6,
+  "extra": {
+    "cold_start_runs_ms": [
+      274.92,
+      275.801,
+      276.954,
+      276.965,
+      278.038
+    ],
+    "driver": "/tmp/silk-competitors/amp/.venv/bin/python -I /Users/nrav/.t3/worktrees/silk/t3-338d7d4b/bench/competitors/amp/bench.py --relay {URL} --n {N} --concurrency {C} --warmup {WARMUP} --rt-samples {RT} --rt-warmup {RTWARM}",
+    "version": "fg-amp 0.12.1 from PyPI (release commit a26c517; installed sources byte-identical to repo HEAD fd2d6ae21878dabe5b17a26e689f55f4033e6054, whose later commits are docs only); fg-agent-id 0.2.0; wire protocol amp/0.1"
+  },
+  "notes": [
+    "STORAGE: in-memory by default (dicts and deques; lost on restart). With --db, SqliteRelayState stores mailbox, in-flight leases, cards, revocations and key revocations in one SQLite file. It uses Python sqlite3 defaults: journal_mode=DELETE (rollback journal, not WAL) and synchronous=FULL, one shared connection serialized by a threading.Lock, and a commit per enqueue, drain and ack. On macOS SQLite's fsync is plain fsync(), not F_FULLFSYNC (fullfsync is off), so a commit is not a guaranteed platter flush there. The spec launches with --db to match a durable SQLite design. Long-poll waiters are in memory either way. DELIVERY: at-least-once. Pulled envelopes are leased for 30 s and redelivered if not acked; after 12 attempts they are dead-lettered. The sender's session also retransmits unacked frames every 5 s (RTO) until Y's receipt arrives. ENCRYPTION: end to end. The handshake is sealed to the recipient's X25519 prekey, with an ML-KEM-768 hybrid contributing to the root (pq_hybrid_handshake=true was negotiated in the smoke runs, but ML-KEM runs only at handshake and resume, never per message). Per message there is a double ratchet (X25519 DH step on each direction turn, HKDF chain otherwise) and ChaCha20-Poly1305. Every envelope is Ed25519-signed and verified by the relay on send and by the recipient. Routing metadata (from, to, session_id, seq, type, created_at) is cleartext to the relay, and receipt bodies are signed plaintext JSON. TRANSPORT: plain HTTP or WS on localhost, no TLS. AUTH: no bearer tokens or accounts. Sends authenticate by envelope signature, pulls and acks by a fresh audience-bound Ed25519 signature (120 s freshness, pull signatures single-use), and the WS socket by one signed auth frame per 300 s. Cards are self-signed. The relay holds no ledger and no transcript; transcripts and hash chains live only at the endpoints. Unmodified limits still active: 1 MiB envelope cap, 30 s lease, 12 delivery attempts, 120 s pull freshness, ContactPolicy max_sessions 256, and the 256-frame reorder window and 512-frame send buffer per session.",
+    "Server launched and sampled exactly as in silk-bench foreign; sends driven by the system's own client library (/tmp/silk-competitors/amp/.venv/bin/python -I /Users/nrav/.t3/worktrees/silk/t3-338d7d4b/bench/competitors/amp/bench.py --relay {URL} --n {N} --concurrency {C} --warmup {WARMUP} --rt-samples {RT} --rt-warmup {RTWARM})."
+  ]
+}

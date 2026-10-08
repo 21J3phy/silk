@@ -47,7 +47,16 @@ type Store struct {
 	Rows    atomic.Int64
 	// RoundTrips counts database round trips made by writes and reads.
 	RoundTrips atomic.Int64
+	// DBNanos is wall time spent waiting on the database (including pool waits).
+	DBNanos atomic.Int64
 }
+
+// Timing reports cumulative round trips and database wait time.
+func (s *Store) Timing() (int64, time.Duration) {
+	return s.RoundTrips.Load(), time.Duration(s.DBNanos.Load())
+}
+
+func (s *Store) since(t0 time.Time) { s.DBNanos.Add(int64(time.Since(t0))) }
 
 type request struct {
 	ctx context.Context
@@ -141,6 +150,7 @@ func (s *Store) commit(batch []*request) {
 			r.err <- err
 		}
 	}
+	t0 := time.Now()
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
 		fail(err)
@@ -152,13 +162,15 @@ func (s *Store) commit(batch []*request) {
 	b.Queue("BEGIN")
 	b.Queue("SELECT pg_advisory_xact_lock($1)", int64(lockKey))
 	s.RoundTrips.Add(1)
-	if err := conn.SendBatch(ctx, b).Close(); err != nil {
+	err = conn.SendBatch(ctx, b).Close()
+	s.since(t0)
+	if err != nil {
 		conn.Conn().Close(ctx)
 		fail(err)
 		return
 	}
 	rollback := func() { conn.Exec(context.Background(), "ROLLBACK") }
-	base := &pgTx{ctx: ctx, q: conn, rt: &s.RoundTrips}
+	base := &pgTx{ctx: ctx, q: conn, rt: &s.RoundTrips, ns: &s.DBNanos}
 	ov := kv.NewOverlay(base)
 	results := make([]error, len(batch))
 	kept := 0
@@ -209,7 +221,10 @@ func (s *Store) commit(batch []*request) {
 	}
 	wb.Queue("COMMIT")
 	s.RoundTrips.Add(1)
-	if err := conn.SendBatch(ctx, wb).Close(); err != nil {
+	t1 := time.Now()
+	err = conn.SendBatch(ctx, wb).Close()
+	s.since(t1)
+	if err != nil {
 		rollback()
 		fail(err)
 		return
@@ -238,7 +253,7 @@ func (s *Store) View(ctx context.Context, fn func(kv.Tx) error) error {
 	if s.closed.Load() {
 		return kv.ErrClosed
 	}
-	t := &pgTx{ctx: ctx, q: s.pool, readOnly: true, rt: &s.RoundTrips}
+	t := &pgTx{ctx: ctx, q: s.pool, readOnly: true, rt: &s.RoundTrips, ns: &s.DBNanos}
 	if err := safeRun(fn, t); err != nil {
 		return err
 	}
@@ -266,11 +281,19 @@ type pgTx struct {
 	readOnly bool
 	err      error
 	rt       *atomic.Int64
+	ns       *atomic.Int64
 }
 
-func (t *pgTx) trip() {
+// trip counts a round trip; call the returned func when it completes.
+func (t *pgTx) trip() func() {
 	if t.rt != nil {
 		t.rt.Add(1)
+	}
+	t0 := time.Now()
+	return func() {
+		if t.ns != nil {
+			t.ns.Add(int64(time.Since(t0)))
+		}
 	}
 }
 
@@ -283,8 +306,9 @@ func (t *pgTx) fail(err error) error {
 
 func (t *pgTx) Get(key []byte) ([]byte, error) {
 	var v []byte
-	t.trip()
+	done := t.trip()
 	err := t.q.QueryRow(t.ctx, "SELECT v FROM silk_kv WHERE k = $1", key).Scan(&v)
+	done()
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -306,7 +330,8 @@ func (t *pgTx) GetMany(keys [][]byte) ([][]byte, error) {
 	for i, k := range keys {
 		pos[string(k)] = append(pos[string(k)], i)
 	}
-	t.trip()
+	done := t.trip()
+	defer done()
 	rows, err := t.q.Query(t.ctx, "SELECT k, v FROM silk_kv WHERE k = ANY($1::bytea[])", keys)
 	if err != nil {
 		return nil, t.fail(err)
@@ -341,7 +366,7 @@ func (t *pgTx) Delete(key []byte) error {
 func (t *pgTx) Scan(start, end []byte, limit int, fn func(k, v []byte) bool) error {
 	var rows pgx.Rows
 	var err error
-	t.trip()
+	done := t.trip()
 	lim := any(nil)
 	if limit > 0 {
 		lim = limit
@@ -370,6 +395,7 @@ func (t *pgTx) Scan(start, end []byte, limit int, fn func(k, v []byte) bool) err
 		buf = append(buf, kvRow{k, v})
 	}
 	rows.Close()
+	done()
 	if err := rows.Err(); err != nil {
 		return t.fail(err)
 	}

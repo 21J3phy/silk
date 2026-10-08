@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Silk compared with other agent messaging systems</title>
+<style>
+.viz-root{
+  --ink: var(--foreground, #0b0b0b);
+  --ink2: var(--muted-foreground, #52514e);
+  --ink3: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --gray: #b9b8b1; --surface: var(--background, #fcfcfb);
+  --s1:#2a78d6; --good:#006300;
+  color: var(--ink); font: 14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+.viz-root.dark{
+  --ink: var(--foreground, #ffffff); --ink2: var(--muted-foreground, #c3c2b7); --ink3:#8f8e88;
+  --grid:#2c2c2a; --axis:#383835; --gray:#5d5c57; --surface: var(--background, #1a1a19);
+  --s1:#3987e5; --good:#0ca30c;
+}
+@media (prefers-color-scheme: dark){ html:not([data-light]) .viz-root:not(.light){
+  --ink: var(--foreground, #ffffff); --ink2: var(--muted-foreground, #c3c2b7); --ink3:#8f8e88;
+  --grid:#2c2c2a; --axis:#383835; --gray:#5d5c57; --surface: var(--background, #1a1a19);
+  --s1:#3987e5; --good:#0ca30c; } }
+body{margin:0}
+html.standalone{background:#fcfcfb}
+html.standalone body{max-width:960px;margin:0 auto;padding:28px 20px 48px}
+html.standalone h1{font-size:24px;margin:0 0 4px}
+@media (prefers-color-scheme: dark){ html.standalone{background:#1a1a19} }
+h1{display:none}
+html.standalone h1{display:block}
+h2{font-size:15px;font-weight:600;margin:30px 0 2px}
+.sub{color:var(--ink2);margin:0 0 10px;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px 16px;margin:6px 0 4px}
+.kpi .l{color:var(--ink2);font-size:12px}
+.kpi .v{font-size:22px;font-weight:600;letter-spacing:-.01em}
+.kpi .d{font-size:12px;color:var(--ink2)}
+.kpi .x{color:var(--good);font-weight:600}
+.kgroup{grid-column:1/-1;font-size:12px;font-weight:600;color:var(--ink);margin:6px 0 -6px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--ink2);margin:0 0 2px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px}
+svg{display:block;overflow:visible}
+svg text{fill:var(--ink2);font-size:11px}
+svg .val{fill:var(--ink);font-size:11px;font-weight:600}
+svg .sys{fill:var(--ink);font-size:12px}
+svg .sys.silk{font-weight:600}
+svg .muted{fill:var(--ink3)}
+.axis{stroke:var(--axis);stroke-width:1}
+.mark{cursor:default}
+.mark:hover,.mark:focus{opacity:.82;outline:none}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:2px 32px}
+.mini h3{font-size:13px;font-weight:600;margin:14px 0 0;display:flex;justify-content:space-between;gap:8px}
+.mini h3 small{font-weight:400;color:var(--ink3);font-size:11px;white-space:nowrap}
+details{margin:2px 0 0;font-size:12px;color:var(--ink2)}
+details summary{cursor:pointer;width:max-content}
+table{border-collapse:collapse;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+th,td{padding:3px 12px 3px 0;text-align:right;border-bottom:1px solid var(--grid);vertical-align:top}
+th:first-child,td:first-child{text-align:left}
+th{font-weight:600;color:var(--ink)}
+.note{font-size:12px;color:var(--ink2);margin:8px 0 0}
+.work td{text-align:left;font-size:12px;color:var(--ink2)}
+.work td:first-child{color:var(--ink);white-space:nowrap}
+.matrix td,.matrix th{text-align:center;padding:4px 8px}
+.matrix td:first-child,.matrix th:first-child{text-align:left;padding-left:0}
+.matrix th.silk{color:var(--s1)}
+.dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px}
+.dot.y{background:var(--ink)}
+.dot.p{background:linear-gradient(90deg,var(--ink) 50%,transparent 50%);box-shadow:inset 0 0 0 1.5px var(--ink)}
+.dot.n{box-shadow:inset 0 0 0 1.5px var(--axis)}
+.matrix td.silkcol .dot.y{background:var(--s1)}
+.matrix tr.total td{font-weight:600;color:var(--ink);border-bottom:none;white-space:nowrap}
+#tip{position:fixed;pointer-events:none;z-index:9;background:var(--surface);color:var(--ink);border:1px solid var(--grid);
+  border-radius:8px;padding:6px 9px;font-size:12px;box-shadow:0 2px 10px rgba(0,0,0,.12);display:none;max-width:280px}
+#tip b{font-size:13px}
+</style>
+</head>
+<body>
+<div class="viz-root" id="root">
+<h1>Silk compared with other agent messaging systems</h1>
+<div class="kpis" id="kpis"></div>
+<p class="note" id="kpinote"></p>
+
+<h2>Same machine, same load</h2>
+<p class="sub">Each system's own server, driven by one load generator: fresh server per level, 100 warmup and 2,000 timed sends, one keep-alive connection per client. Silk is blue.</p>
+<div class="legend"><span><i style="background:var(--s1)"></i>Silk</span><span><i style="background:var(--gray)"></i>Other systems</span></div>
+<div class="grid2" id="c-local"></div>
+<div id="t-local"></div>
+<details><summary>What each server does per message</summary><table class="work" id="t-work"></table></details>
+
+<h2>Over the internet: Silk's hosted relay vs XMTP</h2>
+<p class="sub" id="live-sub"></p>
+<div class="legend"><span><i style="background:var(--s1)"></i>Silk</span><span><i style="background:var(--gray)"></i>XMTP</span></div>
+<div class="grid2" id="c-live"></div>
+<div id="t-live"></div>
+
+<h2>Protections</h2>
+<p class="sub">From each project's documentation. Filled: yes. Half: partial or optional. Empty: no.</p>
+<div id="c-prot"></div>
+
+<p class="note" id="losses"></p>
+<div id="tip" role="status"></div>
+</div>
+<script>
+const D = __DATA__;
+const root = document.getElementById('root');
+(function(){
+  const hosted = getComputedStyle(document.documentElement).getPropertyValue('--background').trim() !== '';
+  if (!hosted) document.documentElement.classList.add('standalone');
+  const bg = getComputedStyle(document.body).backgroundColor;
+  const m = bg && bg.match(/\d+(\.\d+)?/g);
+  if (m && m.length >= 3 && (m.length < 4 || +m[3] > 0)) {
+    const [r,g,b] = m.map(Number), L = 0.2126*r + 0.7152*g + 0.0722*b;
+    root.classList.add(L < 128 ? 'dark' : 'light');
+  }
+})();
+const fmt = (v,d=0) => v==null?'–':Number(v).toLocaleString('en-US',{maximumFractionDigits:d,minimumFractionDigits:0});
+function fmtMs(v){ if(v==null) return '–'; if(v>=10000) return fmt(v/1000,0)+' s'; if(v>=1000) return fmt(v/1000,1)+' s'; if(v>=10) return fmt(v,0)+' ms'; if(v>=1) return fmt(v,1)+' ms'; return fmt(v,2)+' ms'; }
+function fmtB(b){ return b==null?'–':b>=1e6?fmt(b/1e6,1)+' MB':b>=1e4?fmt(b/1e3,0)+' KB':fmt(b,0)+' B'; }
+const fmtMB = v => v==null?'–':fmt(v, v<10?1:0)+' MB';
+const fmtRate = v => v==null?'–':fmt(v)+'/s';
+const NS='http://www.w3.org/2000/svg';
+function el(tag, attrs, parent){ const n=document.createElementNS(NS, tag); for(const k in attrs) n.setAttribute(k, attrs[k]); if(parent) parent.append(n); return n; }
+function txt(parent, x, y, s, cls, anchor){ const t=el('text',{x,y,'text-anchor':anchor||'start',class:cls||''},parent); t.textContent=s; return t; }
+function roundRight(x,y,w,h,r){ r=Math.min(r,h/2,w); return `M${x},${y}H${x+w-r}Q${x+w},${y} ${x+w},${y+r}V${y+h-r}Q${x+w},${y+h} ${x+w-r},${y+h}H${x}Z`; }
+const tip = document.getElementById('tip');
+function bindTip(node, lines){
+  node.setAttribute('tabindex','0');
+  const show = e => { tip.replaceChildren(); lines().forEach((s,i)=>{ const d=document.createElement('div'); if(i===0){const b=document.createElement('b'); b.textContent=s; d.append(b);} else d.textContent=s; tip.append(d); });
+    tip.style.display='block'; const r=node.getBoundingClientRect(); const x=e.clientX||r.right, y=e.clientY||r.top;
+    tip.style.left=Math.min(x+12, innerWidth-tip.offsetWidth-8)+'px'; tip.style.top=(y+14)+'px'; };
+  node.addEventListener('pointermove', show); node.addEventListener('focus', show);
+  for (const ev of ['pointerleave','blur']) node.addEventListener(ev, ()=>tip.style.display='none');
+}
+function table(container, head, rows){ const d=document.createElement('details'); const s=document.createElement('summary'); s.textContent='Table'; d.append(s); const t=document.createElement('table'); const tr=document.createElement('tr'); head.forEach(h=>{const th=document.createElement('th');th.textContent=h;tr.append(th);}); t.append(tr); rows.forEach(r=>{const tr=document.createElement('tr'); r.forEach(c=>{const td=document.createElement('td');td.textContent=c;tr.append(td);}); t.append(tr);}); d.append(t); container.append(d); }
+
+// One emphasis bar chart: systems sorted best first, Silk in the accent hue.
+const losses = [];
+function bars(container, o){
+  const rows = o.rows.filter(r => r.v != null && r.v > 0);
+  if (rows.length < 2) return;
+  rows.sort((a,b) => o.higher ? b.v - a.v : a.v - b.v);
+  const silk = rows.find(r => r.silk), best = rows[0];
+  const box=document.createElement('div'); box.className='mini';
+  const h3=document.createElement('h3'); h3.append(document.createTextNode(o.title)); const sm=document.createElement('small'); sm.textContent=o.higher?'higher is better':'lower is better'; h3.append(sm); box.append(h3); container.append(box);
+  const H=rows.length*26+6; const w=Math.max(300, box.clientWidth||440); const s=el('svg',{width:w,height:H,viewBox:`0 0 ${w} ${H}`,role:'img','aria-label':o.title},box);
+  const L=118;
+  // An outlier more than 6x the next value gets a broken bar so the rest stay readable.
+  const desc=rows.map(r=>r.v).sort((a,b)=>b-a); const broken = desc.length>2 && desc[0] > 6*desc[1];
+  const max = broken ? desc[1]*1.3 : desc[0];
+  const labelOf = r => { let label=o.f(r.v);
+    if (silk && !r.silk) { const ratio = o.higher ? silk.v/r.v : r.v/silk.v; if (ratio >= 1.15) label += '  ·  Silk '+fmt(ratio, ratio<10?1:0)+'× better'; else if (ratio <= 1/1.15) label += '  ·  '+fmt(1/ratio, 1/ratio<10?1:0)+'× better than Silk'; }
+    return label; };
+  // Size the bars so every label fits beside its bar.
+  const labels = rows.map(labelOf); const widths = labels.map(l => { const t=txt(s,0,-100,l,'val'); const w0=t.getComputedTextLength(); t.remove(); return w0; });
+  const frac = r => r.v > max ? 1 : r.v/max;
+  let PW = w - L - 4; for (let i=0;i<rows.length;i++) PW = Math.min(PW, (w - L - 10 - widths[i]) / Math.max(frac(rows[i]), 1e-9));
+  PW = Math.max(PW, 60);
+  rows.forEach((r,i)=>{ const y=3+i*26; txt(s,L-8,y+14,r.name,'sys'+(r.silk?' silk':''),'end');
+    const cut = r.v > max; const bw=Math.max(PW*frac(r),2);
+    const p=el('path',{d:roundRight(L,y+4,bw,14,4),fill:r.silk?'var(--s1)':'var(--gray)',class:'mark'},s);
+    if (cut) { const bx=L+bw*0.8; el('path',{d:`M${bx},${y+20}L${bx+5},${y+2}M${bx+5},${y+20}L${bx+10},${y+2}`,stroke:'var(--surface)','stroke-width':3,fill:'none'},s); }
+    txt(s,L+bw+6,y+15,labels[i],r.silk?'val':'');
+    bindTip(p,()=>[o.f(r.v)+' · '+r.name, o.title].concat(r.extra?[r.extra]:[])); });
+  el('line',{x1:L,x2:L,y1:1,y2:H-1,class:'axis'},s);
+  if (o.note || broken){ const n=document.createElement('p'); n.className='note'; n.textContent=[o.note, broken?'The longest bar is cut to keep the others readable; its label shows the full value.':''].filter(Boolean).join(' '); box.append(n); }
+  if (silk && best !== silk) losses.push(o.title.toLowerCase()+' ('+best.name+' '+o.f(best.v)+' vs Silk '+o.f(silk.v)+')');
+  return {silk, rows};
+}
+
+// Local benchmarks
+(function(){
+  const c=document.getElementById('c-local'); const S=D.local;
+  const R = get => S.map(x=>({name:x.name, v:get(x), silk:x.key==='silk', extra:x.lang+' · '+(x.version||'')}));
+  const charts = [
+    {title:'Throughput, 16 clients', higher:true, f:fmtRate, get:x=>x.thr16},
+    {title:'Throughput, 64 clients', higher:true, f:fmtRate, get:x=>x.thr64, note:'MCP Agent Mail timed out on more than half its sends at 64 clients.'},
+    {title:'Tail latency (p99), 64 clients', f:fmtMs, get:x=>x.p99_64},
+    {title:'Deliver and acknowledge one message (p50)', f:fmtMs, get:x=>x.rt, note:'One message at a time: send, recipient receives, recipient acknowledges. An A2A request returns the agent\'s reply directly, so it is one exchange; the others are store-and-forward.'},
+    {title:'Bytes to send a message', f:fmtB, get:x=>x.bytes, note:'Request and response of the send itself. A2A\'s includes the recipient\'s reply.'},
+    {title:'Bytes to deliver and acknowledge a message', f:fmtB, get:x=>x.rtbytes, note:'Everything both sides exchange with the server for one delivered, acknowledged message.'},
+    {title:'Server CPU per message', f:fmtMs, get:x=>x.cpu, note:'User + system CPU of the server process at 16 clients, divided by accepted messages.'},
+    {title:'Server memory at peak', f:fmtMB, get:x=>x.peak},
+    {title:'Server cold start', f:fmtMs, get:x=>x.cold, note:'Process start until it answers HTTP; median of 5.'},
+    {title:'Install size', f:fmtMB, get:x=>x.install, note:'Silk: one static relay binary. Python systems: site-packages only, excluding the interpreter.'},
+  ];
+  for (const ch of charts) bars(c, Object.assign({rows:R(ch.get)}, ch));
+  table(document.getElementById('t-local'), ['System','Language','msg/s @16','msg/s @64','errors @64','p99 @64','deliver+ack','bytes send','bytes deliver+ack','CPU/msg','peak MB','cold start','install MB'],
+    S.map(x=>[x.name,x.lang,fmt(x.thr16),fmt(x.thr64),fmt(x.err64),fmtMs(x.p99_64),fmtMs(x.rt),fmt(x.bytes),fmt(x.rtbytes),fmtMs(x.cpu),fmt(x.peak,1),fmtMs(x.cold),fmt(x.install,1)]));
+  const t=document.getElementById('t-work');
+  for (const x of S){ const tr=document.createElement('tr'); for (const v of [x.name, x.work]){ const td=document.createElement('td'); td.textContent=v; tr.append(td);} t.append(tr); }
+})();
+
+// Live: Silk hosted relay vs XMTP dev network
+(function(){
+  const c=document.getElementById('c-live'); const s=D.live.silk, x=D.live.xmtp;
+  if (!s || !x){ document.getElementById('live-sub').textContent='Live comparison not available.'; return; }
+  document.getElementById('live-sub').textContent='Measured back to back from the same home connection: two agent processes per system, Silk through silk-relay.vercel.app (serverless, free tier), XMTP through its public dev network. Medians; earlier runs are in the table.';
+  const pair = (get) => [{name:'Silk', v:get(s), silk:true}, {name:'XMTP', v:get(x)}];
+  const charts = [
+    {title:'Send (accepted by the network)', f:fmtMs, get:d=>d.send},
+    {title:'Delivery to a waiting recipient', f:fmtMs, get:d=>d.deliver},
+    {title:'Ask and get a reply', f:fmtMs, get:d=>d.rt, note:'A sends, B receives and replies, A receives the reply.'},
+    {title:'New identity ready to send', f:fmtMs, get:d=>d.register, note:'Fresh keys, registration with the network, client ready.'},
+    {title:'Client ready from an existing identity', f:fmtMs, get:d=>d.reopen},
+    {title:'Client memory at peak', f:fmtMB, get:d=>d.rss_peak},
+    {title:'Client CPU per message sent', f:fmtMs, get:d=>d.cpu},
+    {title:'Network bytes per message sent', f:fmtB, get:d=>d.bytes, note:'Sender process, measured by the OS (includes TLS).'},
+    {title:'Client install size', f:fmtMB, get:d=>d.install, note:'Silk: one static binary. XMTP: the SDK\'s node_modules, excluding the Node.js runtime.'},
+  ];
+  for (const ch of charts) bars(c, Object.assign({rows:pair(ch.get)}, ch));
+  table(document.getElementById('t-live'), ['Metric','Silk','XMTP'], [['send p50 / p90',fmtMs(s.send)+' / '+fmtMs(s.send90),fmtMs(x.send)+' / '+fmtMs(x.send90)],['deliver p50 / p90',fmtMs(s.deliver)+' / '+fmtMs(s.deliver90),fmtMs(x.deliver)+' / '+fmtMs(x.deliver90)],
+    ['ask-reply p50 / p90',fmtMs(s.rt)+' / '+fmtMs(s.rt90),fmtMs(x.rt)+' / '+fmtMs(x.rt90)],['new identity',fmtMs(s.register),fmtMs(x.register)],['client ready',fmtMs(s.reopen),fmtMs(x.reopen)],
+    ['memory idle / peak',fmtMB(s.rss_idle)+' / '+fmtMB(s.rss_peak),fmtMB(x.rss_idle)+' / '+fmtMB(x.rss_peak)],['CPU per message',fmtMs(s.cpu),fmtMs(x.cpu)],['bytes per message',fmtB(s.bytes),fmtB(x.bytes)],['install',fmtMB(s.install),fmtMB(x.install)]]
+    .concat([0,1].map(i=>['run '+(i+1)+' send / deliver / reply', ...[s,x].map(d=>d.runs[i]?fmtMs(d.runs[i].send)+' / '+fmtMs(d.runs[i].deliver)+' / '+fmtMs(d.runs[i].rt)+' ('+String(d.runs[i].at).slice(11,16)+' UTC)':'–')])));
+})();
+
+// Protections matrix
+(function(){
+  const P=D.protections, c=document.getElementById('c-prot'); const t=document.createElement('table'); t.className='matrix';
+  const hr=document.createElement('tr'); ['',...P.systems].forEach((h,i)=>{const th=document.createElement('th'); th.textContent=h; if(i===1) th.className='silk'; hr.append(th);}); t.append(hr);
+  const totals=P.systems.map(()=>0);
+  for (const [label, vals] of P.rows){ const tr=document.createElement('tr'); const td0=document.createElement('td'); td0.textContent=label; tr.append(td0);
+    vals.forEach((v,i)=>{ totals[i]+=v/2; const td=document.createElement('td'); if(i===0) td.className='silkcol'; const d=document.createElement('span'); d.className='dot '+['n','p','y'][v]; d.setAttribute('role','img'); d.setAttribute('aria-label',['no','partial','yes'][v]); d.title=['no','partial or optional','yes'][v]; td.append(d); tr.append(td); });
+    t.append(tr); }
+  const tr=document.createElement('tr'); tr.className='total'; const td0=document.createElement('td'); td0.textContent='Total (partial counts half)'; tr.append(td0);
+  totals.forEach(v=>{const td=document.createElement('td'); td.textContent=fmt(v,1)+' / '+P.rows.length; tr.append(td);}); t.append(tr); c.append(t);
+})();
+
+// Headline tiles, in labelled groups so every ratio says what it is compared with.
+(function(){
+  const k=document.getElementById('kpis'); const S=D.local, silk=S.find(x=>x.key==='silk'), amp=S.find(x=>x.key==='amp');
+  const L=D.live.silk, X=D.live.xmtp;
+  const groups=[];
+  const tile=(label, sv, ov, higher, f, who)=>{ if(sv==null||ov==null) return null; const ratio=higher?sv/ov:ov/sv; return ratio>=1.15?[label,f(sv),ratio,who+' '+f(ov)]:null; };
+  if (L && X) groups.push(['Against XMTP, agent to agent over the internet', [
+    tile('Agent ready to send', L.reopen, X.reopen, false, fmtMs, 'XMTP'), tile('Agent memory', L.rss_peak, X.rss_peak, false, fmtMB, 'XMTP'),
+    tile('Install size', L.install, X.install, false, fmtMB, 'XMTP'), tile('Network bytes per message', L.bytes, X.bytes, false, fmtB, 'XMTP')]]);
+  if (silk && amp) groups.push(['Against AMP, the other end-to-end encrypted relay with consent, same machine', [
+    tile('Throughput, 16 clients', silk.thr16, amp.thr16, true, fmtRate, 'AMP'), tile('Deliver and acknowledge', silk.rt, amp.rt, false, fmtMs, 'AMP'),
+    tile('Server CPU per message', silk.cpu, amp.cpu, false, fmtMs, 'AMP'), tile('Tail latency, 64 clients', silk.p99_64, amp.p99_64, false, fmtMs, 'AMP')]]);
+  for (const [title, tiles] of groups){ const h=document.createElement('div'); h.className='kgroup'; h.textContent=title; k.append(h);
+    for (const t0 of tiles.filter(Boolean)){ const [l,v,ratio,d]=t0; const t=document.createElement('div'); t.className='kpi';
+      const a=document.createElement('div'); a.className='l'; a.textContent=l; const b=document.createElement('div'); b.className='v'; b.textContent=v;
+      const c=document.createElement('div'); c.className='d'; const x=document.createElement('span'); x.className='x'; x.textContent=fmt(ratio, ratio<10?1:0)+'× better '; c.append(x, document.createTextNode('· '+d)); t.append(a,b,c); k.append(t); } }
+  document.getElementById('kpinote').textContent='Every chart below includes all measured systems, including where others beat Silk. Silk does more per message than most of them: signature checks, post-quantum end-to-end encryption, a durable write and a public ledger entry.';
+  document.getElementById('losses').textContent = losses.length ? 'Where Silk is not ahead: '+losses.join('; ')+'.' : 'Silk is ahead on every measured metric.';
+})();
+</script>
+</body>
+</html>

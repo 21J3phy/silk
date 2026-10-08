@@ -1,0 +1,95 @@
+{
+  "system": "silk-2.1",
+  "language": "go1.26.0",
+  "machine": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "timestamp": "2026-10-08T05:12:13Z",
+  "limits_overridden": [
+    "relay --bench-unlimited-rate: per-conversation messages-per-minute window (protocol maximum 600/min per direction) and per-conversation backlog cap (1,000 unacknowledged) not enforced; budget, sequence, signature, expiry, inbox-capacity checks all still run",
+    "relay --no-ip-limits: per-IP token bucket (30 POST/s, 60 GET/s per address) disabled because all load comes from 127.0.0.1",
+    "relay --register-bits 8 --intro-bits 8: proof-of-work for untimed setup (registration, contact requests) lowered from 22/20 bits; message sends never require proof of work"
+  ],
+  "send_throughput": [
+    {
+      "concurrency": 1,
+      "requests": 2000,
+      "seconds": 0.995,
+      "msgs_per_sec": 2010,
+      "p50_ms": 0.403,
+      "p90_ms": 0.656,
+      "p99_ms": 2.203,
+      "errors": 0
+    },
+    {
+      "concurrency": 4,
+      "requests": 2000,
+      "seconds": 0.492,
+      "msgs_per_sec": 4065.9,
+      "p50_ms": 0.808,
+      "p90_ms": 1.413,
+      "p99_ms": 3.505,
+      "errors": 0
+    },
+    {
+      "concurrency": 16,
+      "requests": 2000,
+      "seconds": 0.394,
+      "msgs_per_sec": 5078,
+      "p50_ms": 2.613,
+      "p90_ms": 5.014,
+      "p99_ms": 8.562,
+      "errors": 0
+    },
+    {
+      "concurrency": 64,
+      "requests": 2000,
+      "seconds": 0.309,
+      "msgs_per_sec": 6468.1,
+      "p50_ms": 8.451,
+      "p90_ms": 15.549,
+      "p99_ms": 26.901,
+      "errors": 0
+    }
+  ],
+  "roundtrip_ms": {
+    "samples": 300,
+    "p50": 1.234,
+    "p90": 2.062,
+    "p99": 4.48,
+    "mean": 1.461
+  },
+  "wire_bytes": {
+    "roundtrip": 2029,
+    "send": 680
+  },
+  "rss_mb": {
+    "idle": 23.8,
+    "peak": 37.5
+  },
+  "cpu_ms_per_msg": 0.285,
+  "cold_start_ms": 14.1,
+  "install_mb": 11.4,
+  "extra": {
+    "cold_start_runs_ms": [
+      13.962,
+      14.111,
+      14.133,
+      14.18,
+      14.465
+    ]
+  },
+  "notes": [
+    "Server: `silk relay` (Go, net/http HTTP/1.1 keep-alive) as a separate process, SQLite (modernc.org/sqlite, pure Go) in WAL mode with synchronous=FULL, group commit (one writer goroutine batches concurrent writes into one transaction/fsync, each isolated by a savepoint).",
+    "Every send is a real protocol frame: AES-256-GCM ciphertext under a ratcheted per-message key from a post-quantum hybrid (ML-KEM-768 + X25519) HPKE handshake, Ed25519 signature verified by the relay, sequence/budget/expiry checks, inbox event, and an RFC 6962 transparency-ledger append in the same transaction. The relay never sees plaintext.",
+    "Throughput: fresh relay + empty DB per level; 100 untimed warmup sends then 2000 timed closed-loop sends; each client worker owns one conversation and one keep-alive connection; frames encrypted and signed before timing (as v1 pre-signs).",
+    "Roundtrip: per sample t0 -\u003e encrypt+sign (timed) -\u003e POST /v2/frames -\u003e recipient GET /v2/inbox (signed Silk-Auth) -\u003e decrypt -\u003e sign+POST ack -\u003e t1; sequential over two keep-alive connections, like the v1 mailbox roundtrip. 10 untimed warmup samples.",
+    "wire_bytes: HTTP bytes counted at the socket (request line + headers + body, status line + headers + body).",
+    "rss_mb idle = median over the per-level servers 1 s after setup; peak = max RSS sampled every 20 ms via ps during the timed run.",
+    "cpu_ms_per_msg: relay user+sys CPU (ps cputime, 10 ms resolution) over the c=16 timed run divided by accepted sends.",
+    "cold_start_ms: spawn `silk relay` with a new DB until first HTTP 200 from /healthz (probe every 2 ms), median of 5. install_mb: size of the single static `silk` binary (no runtime or dependencies needed).",
+    "Machine was not otherwise idle; same desktop conditions as the v1 runs."
+  ]
+}

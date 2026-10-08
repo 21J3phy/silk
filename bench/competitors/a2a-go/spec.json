@@ -1,0 +1,39 @@
+{
+  "system": "a2a-go",
+  "version": "v2.6.0",
+  "language": "Go (github.com/a2aproject/a2a-go/v2 v2.6.0, go1.26.0 darwin/arm64, std net/http; built with CGO_ENABLED=0 go build -trimpath -ldflags \"-s -w\")",
+  "launch": [
+    "/tmp/silk-competitors/a2a-go/a2a-go-server",
+    "--addr",
+    "127.0.0.1:{PORT}"
+  ],
+  "health": "/.well-known/agent-card.json",
+  "send": {
+    "method": "POST",
+    "path": "/",
+    "headers": {
+      "Content-Type": "application/json",
+      "A2A-Version": "1.0"
+    },
+    "body": {
+      "jsonrpc": "2.0",
+      "id": "{ID}",
+      "method": "SendMessage",
+      "params": {
+        "message": {
+          "messageId": "{ID}",
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "{TEXT}"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "install_paths": [
+    "/tmp/silk-competitors/a2a-go/a2a-go-server"
+  ],
+  "notes": "A2A spec 1.0 JSON-RPC binding (method 'SendMessage'). Built like the SDK's examples/helloworld/server/jsonrpc: http.ServeMux with '/' -> a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(executor)) and a2asrv.WellKnownAgentCardPath -> a2asrv.NewStaticAgentCardHandler(card). Default std-lib http.Server (only ReadHeaderTimeout=10s set). GOMAXPROCS and GOGC are left at their defaults, so it uses every core. NewHandler defaults: taskstore.NewInMemory and eventqueue.NewInMemoryManager, no concurrency limit, no logging interceptor (no per-request logs). Persistence: none. The executor yields a single agent Message (message-only interaction), so the task store is never written. The per-request event queue is destroyed after the reply. No disk I/O, no fsync. Auth/crypto: none - no TLS (plain HTTP on loopback), no authentication, no message signing or verification, unsigned agent card. The server does not check the A2A-Version header (it is sent anyway, to match the spec and the Python target). Errors come back as HTTP 200 with a JSON-RPC 'error' member. The server does not deduplicate on messageId. Success response: HTTP 200, headers Content-Type: application/json, Date, Content-Length; body {\"jsonrpc\":\"2.0\",\"id\":<request id>,\"result\":{\"message\":{\"messageId\":<server uuidv7>,\"contextId\":<server uuidv7>,\"parts\":[{\"text\":\"ok\"}],\"role\":\"ROLE_AGENT\"}}} plus a trailing newline (json.Encoder). install_paths: one static stripped binary, 6,553,650 bytes. The module lives in bench/competitors/a2a-go with its own go.mod (module silkbench/a2a-go) and is independent of the repo root module."
+}

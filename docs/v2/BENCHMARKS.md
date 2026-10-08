@@ -1,6 +1,8 @@
 # Silk v2 benchmarks
 
-Charts: [silk-relay.vercel.app/benchmarks](https://silk-relay.vercel.app/benchmarks) (generated from `bench/results/*.json` by `bench/make_report.py`).
+Charts: [silk-relay.vercel.app/benchmarks](https://silk-relay.vercel.app/benchmarks) (generated from `bench/results/*.json` by `bench/make_report.py`). Comparison with other systems (A2A, XMTP, AMP, MCP Agent Mail): [COMPARISON.md](COMPARISON.md) and [silk-relay.vercel.app/compare](https://silk-relay.vercel.app/compare).
+
+The numbers below are Silk 2.0 against its own v1 prototypes, measured on 2026-10-07. Silk 2.1 adds a 49-byte ratchet header per message and nothing on the relay's hot path; the comparison runs on 2026-10-08 measured it again under heavier background load, alongside the other systems.
 
 ## Machine and method
 

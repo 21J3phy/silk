@@ -1,0 +1,41 @@
+{
+  "system": "a2a-python",
+  "version": "1.2.2",
+  "language": "Python (a2a-sdk 1.2.2 on uv-managed CPython 3.12.12; starlette 1.7.0 + sse-starlette 3.5.0 (a2a-sdk[http-server]), uvicorn 0.54.0 (plain: asyncio loop + h11, no uvloop/httptools), protobuf 7.36.2)",
+  "launch": [
+    "/tmp/silk-competitors/a2a-python/.venv/bin/python",
+    "-I",
+    "/Users/nrav/.t3/worktrees/silk/t3-338d7d4b/bench/competitors/a2a-python/server.py",
+    "--port",
+    "{PORT}"
+  ],
+  "health": "/.well-known/agent-card.json",
+  "send": {
+    "method": "POST",
+    "path": "/",
+    "headers": {
+      "Content-Type": "application/json",
+      "A2A-Version": "1.0"
+    },
+    "body": {
+      "jsonrpc": "2.0",
+      "id": "{ID}",
+      "method": "SendMessage",
+      "params": {
+        "message": {
+          "messageId": "{ID}",
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "{TEXT}"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "install_paths": [
+    "/tmp/silk-competitors/a2a-python/.venv/lib/python3.12/site-packages"
+  ],
+  "notes": "A2A spec 1.0 JSON-RPC binding (method 'SendMessage', PascalCase; the 0.x 'message/send' is not routed because v0.3 compat is off). Built like the SDK's helloworld sample: Starlette app = create_agent_card_routes(card) + create_jsonrpc_routes(DefaultRequestHandler(OkExecutor, InMemoryTaskStore(), card), '/'); uvicorn.run in-process, 1 worker, no reload, access_log off, log_level warning, bound to 127.0.0.1, one OS process / one asyncio event loop (one core max, GIL). Persistence: none. The executor enqueues a single agent Message, which the SDK treats as a message-only interaction, so nothing is written to the in-memory task store; the per-request ActiveTask is dropped from an in-memory registry after the reply; no disk I/O, no fsync. Auth/crypto: none - no TLS (plain HTTP on loopback), no authentication, no message signing or verification, unsigned agent card. The A2A-Version: 1.0 header is REQUIRED: without it the SDK treats the request as v0.3 and returns JSON-RPC error -32009 (VERSION_NOT_SUPPORTED) with HTTP 200. Errors also come back as HTTP 200 with an 'error' member, so check the body, not the status. The server does not deduplicate on messageId. Success response: HTTP 200, headers 'date', 'server: uvicorn', 'content-length', 'content-type: application/json'; body {\"result\":{\"message\":{\"messageId\":<server uuid4>,\"contextId\":<server uuid4>,\"role\":\"ROLE_AGENT\",\"parts\":[{\"text\":\"ok\"}]}},\"id\":<request id>,\"jsonrpc\":\"2.0\"} (no taskId, because no Task exists). OpenTelemetry: opentelemetry-api comes in transitively (google-api-core), so the SDK's @trace_class spans are ON by default (no-op tracer, but every traced handler/dispatcher/queue method call still opens a span); set OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=false to switch them off. uvicorn keep-alive idle timeout is 5 s. install_paths is the venv site-packages only (base interpreter /Users/nrav/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none excluded): 37,847,135 bytes apparent size (du -sk: 41,808 KiB), 2191 files. That includes 405 __pycache__ .pyc files (5,877,403 bytes) that Python wrote on first launch; without them it is 31,969,732 bytes. Biggest items: cryptography ~11 MB (pulled in by google-auth via google-api-core, never used by this server), google/protobuf ~5.8 MB, pydantic_core ~4.4 MB, a2a ~2.5 MB."
+}

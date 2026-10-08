@@ -1,0 +1,86 @@
+{
+  "system": "a2a-python",
+  "language": "Python (a2a-sdk 1.2.2 on uv-managed CPython 3.12.12; starlette 1.7.0 + sse-starlette 3.5.0 (a2a-sdk[http-server]), uvicorn 0.54.0 (plain: asyncio loop + h11, no uvloop/httptools), protobuf 7.36.2)",
+  "machine": {
+    "cores": 12,
+    "cpu": "Apple M2 Pro",
+    "os": "macOS 27.0"
+  },
+  "timestamp": "2026-10-08T05:12:53Z",
+  "limits_overridden": null,
+  "send_throughput": [
+    {
+      "concurrency": 1,
+      "requests": 2000,
+      "seconds": 2.786,
+      "msgs_per_sec": 717.8,
+      "p50_ms": 1.157,
+      "p90_ms": 1.621,
+      "p99_ms": 2.783,
+      "errors": 0
+    },
+    {
+      "concurrency": 4,
+      "requests": 2000,
+      "seconds": 2.298,
+      "msgs_per_sec": 870.1,
+      "p50_ms": 3.523,
+      "p90_ms": 5.04,
+      "p99_ms": 24.431,
+      "errors": 0
+    },
+    {
+      "concurrency": 16,
+      "requests": 2000,
+      "seconds": 2.169,
+      "msgs_per_sec": 922.1,
+      "p50_ms": 11.866,
+      "p90_ms": 14.11,
+      "p99_ms": 137.998,
+      "errors": 0
+    },
+    {
+      "concurrency": 64,
+      "requests": 2000,
+      "seconds": 2.327,
+      "msgs_per_sec": 859.5,
+      "p50_ms": 46.431,
+      "p90_ms": 157.65,
+      "p99_ms": 250.248,
+      "errors": 0
+    }
+  ],
+  "roundtrip_ms": {
+    "samples": 300,
+    "p50": 1.135,
+    "p90": 1.573,
+    "p99": 2.147,
+    "mean": 1.262
+  },
+  "wire_bytes": {
+    "roundtrip": 920,
+    "send": 920
+  },
+  "rss_mb": {
+    "idle": 53,
+    "peak": 143
+  },
+  "cpu_ms_per_msg": 1.05,
+  "cold_start_ms": 260.9,
+  "install_mb": 40.8,
+  "extra": {
+    "cold_start_runs_ms": [
+      235.856,
+      253.466,
+      260.947,
+      263.3,
+      265.376
+    ],
+    "driver": "silk-bench foreign go1.26.0",
+    "version": "1.2.2"
+  },
+  "notes": [
+    "A2A spec 1.0 JSON-RPC binding (method 'SendMessage', PascalCase; the 0.x 'message/send' is not routed because v0.3 compat is off). Built like the SDK's helloworld sample: Starlette app = create_agent_card_routes(card) + create_jsonrpc_routes(DefaultRequestHandler(OkExecutor, InMemoryTaskStore(), card), '/'); uvicorn.run in-process, 1 worker, no reload, access_log off, log_level warning, bound to 127.0.0.1, one OS process / one asyncio event loop (one core max, GIL). Persistence: none. The executor enqueues a single agent Message, which the SDK treats as a message-only interaction, so nothing is written to the in-memory task store; the per-request ActiveTask is dropped from an in-memory registry after the reply; no disk I/O, no fsync. Auth/crypto: none - no TLS (plain HTTP on loopback), no authentication, no message signing or verification, unsigned agent card. The A2A-Version: 1.0 header is REQUIRED: without it the SDK treats the request as v0.3 and returns JSON-RPC error -32009 (VERSION_NOT_SUPPORTED) with HTTP 200. Errors also come back as HTTP 200 with an 'error' member, so check the body, not the status. The server does not deduplicate on messageId. Success response: HTTP 200, headers 'date', 'server: uvicorn', 'content-length', 'content-type: application/json'; body {\"result\":{\"message\":{\"messageId\":\u003cserver uuid4\u003e,\"contextId\":\u003cserver uuid4\u003e,\"role\":\"ROLE_AGENT\",\"parts\":[{\"text\":\"ok\"}]}},\"id\":\u003crequest id\u003e,\"jsonrpc\":\"2.0\"} (no taskId, because no Task exists). OpenTelemetry: opentelemetry-api comes in transitively (google-api-core), so the SDK's @trace_class spans are ON by default (no-op tracer, but every traced handler/dispatcher/queue method call still opens a span); set OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=false to switch them off. uvicorn keep-alive idle timeout is 5 s. install_paths is the venv site-packages only (base interpreter /Users/nrav/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none excluded): 37,847,135 bytes apparent size (du -sk: 41,808 KiB), 2191 files. That includes 405 __pycache__ .pyc files (5,877,403 bytes) that Python wrote on first launch; without them it is 31,969,732 bytes. Biggest items: cryptography ~11 MB (pulled in by google-auth via google-api-core, never used by this server), google/protobuf ~5.8 MB, pydantic_core ~4.4 MB, a2a ~2.5 MB.",
+    "Same driver and method as the Silk v2 run (silk-bench compare): fresh server per level, 100 untimed warmup sends, 2000 timed closed-loop sends, one keep-alive connection per client, server RSS/CPU from ps, bytes counted at the socket."
+  ]
+}

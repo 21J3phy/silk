@@ -96,11 +96,7 @@ func (a *Agent) Address() string {
 
 // withState runs fn under the agent lock with freshly loaded state, then saves it.
 func (a *Agent) withState(fn func(st *agentState) error) error {
-	m, _ := processLocks.LoadOrStore(a.dir, &sync.Mutex{})
-	mu := m.(*sync.Mutex)
-	mu.Lock()
-	defer mu.Unlock()
-	unlock, err := lockFile(filepath.Join(a.dir, "lock"))
+	unlock, err := lockAgentDir(a.dir)
 	if err != nil {
 		return err
 	}

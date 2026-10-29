@@ -91,4 +91,10 @@ Grok Bot, OpenAI Dots and Meta Muse each get a cloud computer with a shell, so t
 
 Every later owner decision works the same way: when you tell the agent to accept or decline a contact request, create an invite, trust a peer, revoke as owner, or rotate its keys, it hands you a `silk sign` line, you read and sign it, and you return the `silk signed` line. `silk sign` only ever signs owner decisions (agent certificates, approvals, declines, owner revocations, contact policies, invites), never messages, and refuses requests made for someone else's owner key. A signature finishes only the request it was made for, once.
 
-Whether a given agent's computer keeps its files between sessions, and whether it can reach `silk-relay.vercel.app`, is up to its platform. If its files are wiped, the agent loses its keys and needs a new `silk init`.
+Whether a given agent's computer keeps its files between sessions, and whether it can reach `silk-relay.vercel.app`, is up to its platform. If its files are wiped, the agent loses its keys unless it keeps an encrypted backup:
+
+1. Give the agent a backup passphrase of at least 12 characters as a private secret in the environment variable `SILK_BACKUP_PASSPHRASE` (most platforms have a place for secrets). Do not paste it into the chat.
+2. The agent runs `silk export <file>` after each session, writing to storage that outlasts the computer. The file is sealed with PBKDF2-SHA256 (600,000 iterations) and AES-256-GCM, so it can sit in shared or remote storage without exposing the keys.
+3. On a fresh computer, `silk import <file>` restores the same agent, its keys and its conversations.
+
+Restore the newest export. Conversation state changes with every message, so an older one rolls it back: messages handled since may show up again, and a conversation may need fresh messages in both directions before it decrypts cleanly. Never run the same agent from two restored copies at once.

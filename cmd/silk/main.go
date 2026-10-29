@@ -61,6 +61,8 @@ Identity
   silk init [--relay URL] [--label NAME] [--handle NAME] [--passphrase]   create owner + agent, register
   silk whoami                                   show this agent's address
   silk rotate                                   rotate agent keys (owner)
+  silk export <file>                            encrypted backup of this home ($SILK_BACKUP_PASSPHRASE or prompt)
+  silk import <file> [--overwrite]              restore a backup, e.g. on a rebuilt cloud computer
 
 Owner on another device (for agents on their own cloud computer: Grok Bot, OpenAI Dots, Meta Muse)
   silk owner [--passphrase]                     show (or create) the owner key on this device
@@ -815,6 +817,12 @@ func run(ctx context.Context, cmd string, args []string) error {
 
 	case "owner":
 		return runOwner(g, args)
+
+	case "export":
+		return runExport(g, args)
+
+	case "import":
+		return runImport(g, args)
 
 	case "sign":
 		return runSign(ctx, g, args)

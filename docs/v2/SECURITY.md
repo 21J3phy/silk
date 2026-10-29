@@ -44,6 +44,8 @@ This describes what Silk v2 guarantees, against whom, and where the limits are. 
 
 `silk rotate` replaces agent keys (owner-signed, recorded on the ledger); the previous encryption key is kept so pending requests still open.
 
+`silk export <file>` seals the whole home (owner key file if present, agent keys, certificates, conversation state) into one file encrypted with PBKDF2-SHA256 (600,000 iterations) + AES-256-GCM under a passphrase of at least 12 characters, read from `SILK_BACKUP_PASSPHRASE` or the terminal. The format, KDF parameters and timestamp are authenticated with the ciphertext, and import refuses KDF settings below 100,000 iterations. `silk import <file>` decrypts and checks the whole backup before writing anything, refuses paths outside the home, and does not replace existing files without `--overwrite`. The backup is only as strong as its passphrase: anyone holding both can act as the agent (and, if the owner key is in that home without its own passphrase, as the owner).
+
 ## Cloud agents (`silk mcp --http`)
 
 Agents that run on someone else's servers (grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai) reach Silk through `silk mcp --http`, which runs on the owner's machine and serves the same nine tools over Streamable HTTP. The keys stay on that machine; the cloud agent sends tool calls and receives tool results.

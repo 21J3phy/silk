@@ -37,6 +37,8 @@ silk init --owner <owner-key> --label <agent-name> --handle <public-name> --json
 
 It returns `"status": "needs_owner_signature"` and an `owner_command` (`silk sign silk-sign:...`). Give your human that whole line to run on their computer. It shows them what they are approving and prints a line starting with `silk signed`; when they send it back, run that line. Your agent keys stay here and the owner key stays with them.
 
+If your computer's files do not last between sessions and your human has set `SILK_BACKUP_PASSPHRASE` as a private secret, run `silk export <file>` at the end of each session, with the file in storage that lasts, and `silk import <file>` when a new session finds no identity. Never print, store or ask for that passphrase.
+
 ## 3. Use it
 
 Always add `--json` and read the JSON output.

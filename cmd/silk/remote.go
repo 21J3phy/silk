@@ -26,11 +26,27 @@ func runMCP(ctx context.Context, g *globals, args []string) error {
 	addr := fs.String("addr", "127.0.0.1:8765", "with --http: listen address")
 	public := fs.String("public-url", "", "with --http: external https base URL (tunnel or reverse proxy)")
 	tunnel := fs.Bool("tunnel", false, "with --http: open a public https URL with cloudflared")
+	infoPath := fs.String("connection-info-file", "", "with --http and --public-url: write credentials only to this private 0600 file (never service logs)")
 	reset := fs.Bool("reset", false, "with --http: disconnect every cloud agent and issue a new connect token")
 	if _, err := parse(fs, args); err != nil {
 		return err
 	}
-	if *tunnel || *public != "" || *reset {
+	if err := validatePublicURL(*public); err != nil {
+		return err
+	}
+	var infoFile *connectionInfoFile
+	if *infoPath != "" {
+		if *tunnel {
+			return errors.New("--connection-info-file requires a stable --public-url, not --tunnel")
+		}
+		var err error
+		infoFile, err = openConnectionInfoFile(*infoPath, *public)
+		if err != nil {
+			return err
+		}
+		defer infoFile.root.Close()
+	}
+	if *tunnel || *public != "" || *reset || infoFile != nil {
 		*useHTTP = true
 	}
 	if !*useHTTP {
@@ -44,6 +60,8 @@ func runMCP(ctx context.Context, g *globals, args []string) error {
 		return s.Serve(ctx, os.Stdin, os.Stdout)
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	a, err := openAgent(g)
 	if err != nil {
 		return fmt.Errorf("no Silk identity here yet; run `silk init --label <name> --passphrase` first (%w)", err)
@@ -59,8 +77,28 @@ func runMCP(ctx context.Context, g *globals, args []string) error {
 		Agent:     name,
 		Logf:      func(f string, v ...any) { fmt.Fprintf(os.Stderr, f+"\n", v...) },
 	}
+	if infoFile != nil {
+		if err := infoFile.protectStatePath(h.StatePath); err != nil {
+			return err
+		}
+		// Never forward HTTP log messages in hosted mode: they include pairing
+		// codes and externally supplied client names.
+		h.Logf = nil
+		h.PairingCodeChanged = func(code string) error {
+			if err := infoFile.publish("", code); err != nil {
+				cancel()
+				return errors.New("cannot update private connection-info file")
+			}
+			return nil
+		}
+	}
 	if err := h.Load(*reset); err != nil {
 		return err
+	}
+	if infoFile != nil {
+		if err := infoFile.publish(h.Token(), h.PairingCode()); err != nil {
+			return fmt.Errorf("write private connection-info file: %w", err)
+		}
 	}
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -82,24 +120,11 @@ func runMCP(ctx context.Context, g *globals, args []string) error {
 	if base == "" {
 		base = local
 	}
-	fmt.Printf(`Silk MCP over HTTP for %s
-  Endpoint:      %s/mcp
-  Pairing code:  %s
-
-Connect a cloud agent (grok.com, Grok Bot, Meta Muse, OpenAI Dots, ChatGPT, claude.ai):
-  add %s/mcp as a custom MCP connector. When its sign-in page opens, enter the pairing code.
-Agents that take a header (Muse Code, Grok Build, the xAI and OpenAI APIs):
-  Authorization: Bearer %s
-Agents that only take a URL, with no sign-in:
-  %s/mcp/%s
-
-Anyone with the token or that URL can read this agent's inbox and send in approved
-conversations; keep them secret. Contact requests still need you: silk accept <id>.
-`, name, base, h.PairingCode(), base, h.Token(), base, h.Token())
+	printConnectionInstructions(os.Stdout, name, base, h.PairingCode(), h.Token(), infoFile != nil)
 	if h.PublicURL == "" {
 		fmt.Println("\nCloud agents cannot reach this address. Add --tunnel (needs cloudflared), or put it behind https and pass --public-url.")
 	}
-	if c := h.Clients(); len(c) > 0 {
+	if c := h.Clients(); infoFile == nil && len(c) > 0 {
 		fmt.Printf("\nConnected: %s (silk mcp --http --reset disconnects them all)\n", strings.Join(c, ", "))
 	}
 	return <-served

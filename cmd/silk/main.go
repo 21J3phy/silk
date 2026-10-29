@@ -97,6 +97,8 @@ Agents & servers
   silk setup --list | --print <agent> | --remove [agent...]   show support, print a manual snippet, or undo
   silk relay [--addr :8790] [--db FILE]         run a relay
   silk update [--check]                         install the latest signed, ledger-logged release
+  silk release-bundle --version VERSION --out FILE  export public signed release evidence
+  silk self-verify [--bundle FILE]              verify this binary (bundle: no relay request)
   silk version
 
 Global flags: --home DIR (default ~/.silk or $SILK_HOME), --agent LABEL, --json
@@ -822,8 +824,12 @@ func run(ctx context.Context, cmd string, args []string) error {
 	case "signed":
 		return runSigned(ctx, g, args)
 
+	case "release-bundle":
+		return runReleaseBundle(ctx, g, args)
+
 	case "self-verify":
 		fs := newFlags("self-verify", g)
+		bundleFile := fs.String("bundle", "", "verify an exact-version public release bundle without contacting the relay")
 		if _, err := parse(fs, args); err != nil {
 			return err
 		}
@@ -837,7 +843,20 @@ func run(ctx context.Context, cmd string, args []string) error {
 		if c.Config.LedgerKey == "" && c.Config.Relay == DefaultRelay {
 			c.Config.LedgerKey = defaultLedgerKey
 		}
-		chk, err := c.CheckReleaseVersion(ctx, pinnedReleaseKeys(), version, version)
+		var chk *client.UpdateCheck
+		if *bundleFile != "" {
+			var b client.ReleaseBundle
+			data, readErr := os.ReadFile(*bundleFile)
+			if readErr != nil {
+				return readErr
+			}
+			if err := json.Unmarshal(data, &b); err != nil {
+				return err
+			}
+			chk, err = client.VerifyReleaseBundle(&b, pinnedReleaseKeys(), c.Config.LedgerKey, version)
+		} else {
+			chk, err = c.CheckReleaseVersion(ctx, pinnedReleaseKeys(), version, version)
+		}
 		if err != nil {
 			return err
 		}

@@ -48,6 +48,10 @@ type HTTP struct {
 	Agent string
 	// Logf reports connections and pairing codes to the owner's terminal.
 	Logf func(format string, args ...any)
+	// PairingCodeChanged securely publishes each rotated pairing code. It runs
+	// under the HTTP mutex and must not call HTTP methods. On failure the code
+	// is disabled and authorization fails closed; callers may stop the server.
+	PairingCodeChanged func(code string) error
 
 	mu    sync.Mutex
 	st    *httpState
@@ -583,21 +587,26 @@ func (h *HTTP) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.mu.Lock()
-	ok := equal(normPairing(q.Get("pairing_code")), normPairing(h.pair))
+	ok := h.pair != "" && equal(normPairing(q.Get("pairing_code")), normPairing(h.pair))
+	var publishErr error
 	if !ok {
 		h.fails++
 		if h.fails >= maxPairFails {
 			h.fails = 0
-			h.pair = newPairingCode()
+			publishErr = h.rotatePairingLocked()
 			h.logf("silk: %d wrong pairing codes; new pairing code: %s", maxPairFails, h.pair)
 		}
 	} else {
 		// Single use: the next agent needs a new code from the terminal.
 		h.fails = 0
-		h.pair = newPairingCode()
+		publishErr = h.rotatePairingLocked()
 	}
 	next := h.pair
 	h.mu.Unlock()
+	if publishErr != nil {
+		httpErr(w, http.StatusServiceUnavailable, "temporarily_unavailable", "pairing code could not be published securely")
+		return
+	}
 	if !ok {
 		time.Sleep(500 * time.Millisecond)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -616,6 +625,18 @@ func (h *HTTP) authorize(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	h.logf("silk: approved a connection from %s. Pairing code for the next one: %s", c.Name, next)
 	back(url.Values{"code": {code}})
+}
+
+func (h *HTTP) rotatePairingLocked() error {
+	next := newPairingCode()
+	if h.PairingCodeChanged != nil {
+		if err := h.PairingCodeChanged(next); err != nil {
+			h.pair = ""
+			return err
+		}
+	}
+	h.pair = next
+	return nil
 }
 
 func (h *HTTP) token(w http.ResponseWriter, r *http.Request) {

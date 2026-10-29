@@ -28,8 +28,9 @@ const (
 
 // Options configures the store.
 type Options struct {
-	MaxConns int32 // pool size per instance (default 4)
-	MaxBatch int   // Updates per commit (default 256)
+	ExistingOnly bool  // refuse absent tables; do not issue DDL (migration/runtime attachment)
+	MaxConns     int32 // pool size per instance (default 4)
+	MaxBatch     int   // Updates per commit (default 256)
 }
 
 // Store is a PostgreSQL-backed kv.Store.
@@ -64,6 +65,14 @@ type request struct {
 	err chan error
 }
 
+// bootstrapStatement keeps migration attachment free of schema mutations.
+func bootstrapStatement(existingOnly bool) string {
+	if existingOnly {
+		return "SELECT k, v FROM silk_kv LIMIT 0"
+	}
+	return schema
+}
+
 // Open connects, creates the table if needed, and starts the writer.
 func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if o.MaxConns <= 0 {
@@ -86,7 +95,8 @@ func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := pool.Exec(ctx, schema); err != nil {
+	statement := bootstrapStatement(o.ExistingOnly)
+	if _, err := pool.Exec(ctx, statement); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}

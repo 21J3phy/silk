@@ -13,7 +13,6 @@ import (
 	"net/http"
 	_ "net/http/pprof" // only served when --debug-addr is set
 	"os"
-	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -22,6 +21,7 @@ import (
 	"github.com/21J3phy/silk/pkg/client"
 	"github.com/21J3phy/silk/pkg/kv"
 	"github.com/21J3phy/silk/pkg/kv/boltkv"
+	"github.com/21J3phy/silk/pkg/kv/pgkv"
 	"github.com/21J3phy/silk/pkg/kv/sqlitekv"
 	"github.com/21J3phy/silk/pkg/ledger"
 	"github.com/21J3phy/silk/pkg/relay"
@@ -39,7 +39,10 @@ func runRelay(ctx context.Context, args []string) error {
 	regBits := fs.Uint("register-bits", 24, "proof-of-work bits for new identities")
 	introBits := fs.Uint("intro-bits", 20, "base proof-of-work bits for contact requests")
 	syncMode := fs.String("sync", "FULL", "SQLite synchronous mode: FULL or NORMAL")
-	backend := fs.String("store", "sqlite", "storage engine: sqlite (default) or bolt")
+	backend := fs.String("store", "sqlite", "storage engine: sqlite (default), bolt, or existing postgres")
+	dsnEnv := fs.String("dsn-env", "SILK_POSTGRES_DSN", "postgres: environment variable containing the existing database connection string")
+	keyEnv := fs.String("key-env", "", "environment variable containing the existing ledger signing key (exclusive with --key)")
+	expectedKey := fs.String("expected-ledger-key", "", "expected PUBLIC ledger verifier key (required for postgres)")
 	cacheMB := fs.Int("cache-mb", 4, "SQLite writer page cache in MB")
 	relKeys := fs.String("release-keys", "", "comma-separated base64 Ed25519 keys allowed to publish releases to this relay's ledger")
 	trustProxy := fs.Bool("trust-proxy", false, "rate-limit by X-Forwarded-For")
@@ -50,7 +53,13 @@ func runRelay(ctx context.Context, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *keyFile == "" {
+	if *backend != "sqlite" && *backend != "bolt" && *backend != "postgres" {
+		return errors.New("unknown storage engine")
+	}
+	if *backend == "postgres" && (*expectedKey == "" || (*keyEnv == "" && *keyFile == "")) {
+		return errors.New("postgres requires an existing --key or --key-env and --expected-ledger-key; no keys are generated")
+	}
+	if *keyFile == "" && *keyEnv == "" {
 		*keyFile = *db + ".ledger-key"
 	}
 	if os.Getenv("GOGC") == "" {
@@ -62,32 +71,23 @@ func runRelay(ctx context.Context, args []string) error {
 		// measured both faster and lighter than one per core.
 		runtime.GOMAXPROCS(min(4, runtime.NumCPU()))
 	}
-	skey, err := os.ReadFile(*keyFile)
-	if errors.Is(err, os.ErrNotExist) {
-		if *origin == "" {
-			host, _ := os.Hostname()
-			*origin = strings.ToLower(strings.Split(host, ".")[0]) + ".silk.relay"
-		}
-		s, _, err := ledger.GenerateKey(*origin)
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(*keyFile), 0o700); err != nil {
-			return err
-		}
-		if err := os.WriteFile(*keyFile, []byte(s), 0o600); err != nil {
-			return err
-		}
-		skey = []byte(s)
-	} else if err != nil {
-		return err
-	}
-	signer, err := ledger.NewSigner(strings.TrimSpace(string(skey)))
+	signer, err := loadRelaySigner(*keyFile, *keyEnv, *origin, *expectedKey, *backend != "postgres" && *expectedKey == "")
 	if err != nil {
 		return err
 	}
 	var store kv.Store
 	switch *backend {
+	case "postgres":
+		dsn := strings.TrimSpace(os.Getenv(*dsnEnv))
+		if dsn == "" {
+			return errors.New("postgres connection environment variable is missing or empty")
+		}
+		connectCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		store, err = pgkv.Open(connectCtx, dsn, pgkv.Options{MaxConns: 4, MaxBatch: *maxBatch, ExistingOnly: true})
+		cancel()
+		if err != nil {
+			return errors.New("could not open existing PostgreSQL store; check its secure connection settings and existing silk_kv table")
+		}
 	case "bolt":
 		store, err = boltkv.Open(*db, boltkv.Options{MaxBatch: *maxBatch})
 	case "sqlite":
@@ -99,6 +99,14 @@ func runRelay(ctx context.Context, args []string) error {
 		return err
 	}
 	defer store.Close()
+	if *backend == "postgres" {
+		// A blank/wrong database must never start a new history under an old key.
+		var size int64
+		err = store.View(ctx, func(tx kv.Tx) error { var e error; size, e = ledger.Size(tx); return e })
+		if err != nil || size == 0 {
+			return errors.New("postgres migration requires an existing nonempty ledger; refusing to initialize a new history")
+		}
+	}
 	var rk []ed25519.PublicKey
 	for _, k := range strings.Split(*relKeys, ",") {
 		if k = strings.TrimSpace(k); k == "" {
@@ -141,7 +149,7 @@ func runRelay(ctx context.Context, args []string) error {
 		}
 		go http.ListenAndServe(*debugAddr, http.DefaultServeMux)
 	}
-	slog.Info("silk relay listening", "addr", *addr, "db", *db, "origin", signer.Origin, "ledger_key", signer.VKey)
+	slog.Info("silk relay listening", "addr", *addr, "store", *backend, "origin", signer.Origin, "ledger_key", signer.VKey)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

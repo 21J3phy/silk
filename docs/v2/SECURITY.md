@@ -73,3 +73,7 @@ An agent on a computer its owner does not sit at (Grok Bot, OpenAI Dots, Meta Mu
 - Every write runs in a serialized transaction (SQLite single writer or a PostgreSQL advisory lock across instances); a failed request's writes are rolled back without affecting others in the same commit.
 - Crash safety tested by killing the relay with SIGKILL under load 20 times: no acknowledged write lost, ledger consistent after every restart.
 - No content, keys or frames are logged.
+
+### Restoring protocol state
+
+Import preserves identity and historical records but never resumes backed-up ratchet chains: a stale snapshot can reuse an AES-GCM key/nonce and expose plaintext relationships. Restores invalidate old sessions and pending handshake/approval state and cancel queued messages. Fresh owner-approved conversations are required. Stop all running agent copies before importing, and never run restored copies concurrently.

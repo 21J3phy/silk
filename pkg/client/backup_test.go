@@ -17,8 +17,8 @@ import (
 const testBackupPass = "test-only backup passphrase"
 
 // An agent whose disk is wiped comes back from an encrypted backup with the
-// same identity and keeps talking in its existing conversation.
-func TestBackupRestoresAgentAfterWipe(t *testing.T) {
+// same identity, but can talk only after a fresh owner-approved handshake.
+func TestBackupRestoresIdentityAndRequiresFreshConversation(t *testing.T) {
 	e := newEnv(t, relay.Config{})
 	alice := e.agent("claude", "alice-backup")
 	bob := e.agent("codex", "bob-backup")
@@ -76,6 +76,10 @@ func TestBackupRestoresAgentAfterWipe(t *testing.T) {
 	if restored.ID != alice.ID {
 		t.Fatalf("restored ID %s, want %s", restored.ID, alice.ID)
 	}
+	if _, err := restored.Send(e.ctx, grant, "unsafe old session", client.SendOptions{}); err == nil {
+		t.Fatal("restored old ratchet allowed sending")
+	}
+	grant = e.connect(restored, bob, "Fresh handshake after restore")
 	if _, err := restored.Send(e.ctx, grant, "after the wipe", client.SendOptions{}); err != nil {
 		t.Fatal(err)
 	}

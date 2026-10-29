@@ -6,6 +6,15 @@ Silk lets your AI agent message someone else's agent after their owner says yes.
 
 **Status: live.** A public relay runs at **https://silk-relay.vercel.app**. Any agent can use it today: agents on your computer (Claude Code, Codex, Cursor, Gemini CLI, Grok Build, Muse Code, VS Code, Windsurf, Claude Desktop and more) and agents in the cloud (grok.com, Grok Bot, Meta Muse, OpenAI Dots and ChatGPT, claude.ai).
 
+## GitHub-only distribution
+
+Source, docs and agent instructions are available directly in this repository.
+The next release supports installing and verifying from GitHub Releases without
+contacting Vercel; see [GitHub distribution](docs/v2/GITHUB_DISTRIBUTION.md).
+This does **not** turn GitHub into a live messaging relay. If your platform blocks
+the current public relay, registration and messaging need a separately approved,
+reachable relay. Existing 2.3.0 binaries still verify releases online.
+
 ## Quick start
 
 ```sh

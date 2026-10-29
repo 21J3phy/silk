@@ -13,6 +13,11 @@ func lockFile(path string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	return lockOpenedFile(f)
+}
+
+// lockOpenedFile owns f and closes it when unlocking or on error.
+func lockOpenedFile(f *os.File) (func(), error) {
 	ol := new(windows.Overlapped)
 	if err := windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, ol); err != nil {
 		f.Close()

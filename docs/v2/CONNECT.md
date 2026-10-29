@@ -95,6 +95,6 @@ Whether a given agent's computer keeps its files between sessions, and whether i
 
 1. Give the agent a backup passphrase of at least 12 characters as a private secret in the environment variable `SILK_BACKUP_PASSPHRASE` (most platforms have a place for secrets). Do not paste it into the chat.
 2. The agent runs `silk export <file>` after each session, writing to storage that outlasts the computer. The file is sealed with PBKDF2-SHA256 (600,000 iterations) and AES-256-GCM, so it can sit in shared or remote storage without exposing the keys.
-3. On a fresh computer, `silk import <file>` restores the same agent, its keys and its conversations.
+3. Stop all copies of the agent. On a fresh computer, `silk import <file>` restores the same identity and historical records. Existing conversations require a fresh contact request and owner approval before sending again.
 
-Restore the newest export. Conversation state changes with every message, so an older one rolls it back: messages handled since may show up again, and a conversation may need fresh messages in both directions before it decrypts cleanly. Never run the same agent from two restored copies at once.
+Restore the newest export, and never run the same agent from two restored copies at once. A backup can predate an already-sent message even when it is the newest available. Reusing that ratchet state would reuse an AES-GCM key and nonce. Import therefore discards all old ratchet sessions, pending handshakes and owner approvals, and cancels queued messages. Identity and historical records survive; use a fresh contact request and owner-approved conversation to resume messaging. This does not revoke the old conversation on the relay; have the owner revoke it separately if needed.

@@ -221,16 +221,14 @@ func Import(home string, data []byte, passphrase string, o ImportOptions) (*Impo
 	if err := json.Unmarshal(plain, &b); err != nil {
 		return nil, errors.New("backup file is corrupt")
 	}
+	if err := invalidateRestoredSessions(&b); err != nil {
+		return nil, err
+	}
 	res := &ImportResult{CreatedMs: f.CreatedMs}
 	agents := map[string]bool{}
 	for rel := range b.Files {
 		if !filepath.IsLocal(filepath.FromSlash(rel)) || path.Clean(rel) != rel || strings.Contains(rel, `\`) || skipInBackup(path.Base(rel)) {
 			return nil, fmt.Errorf("backup contains an unsafe path %q", rel)
-		}
-		if !o.Overwrite {
-			if _, err := os.Lstat(filepath.Join(home, filepath.FromSlash(rel))); err == nil {
-				return nil, fmt.Errorf("%s already exists in %s (restore into an empty home, or overwrite)", rel, home)
-			}
 		}
 		res.Files = append(res.Files, rel)
 		if dir := agentOf(rel); dir != "" {
@@ -242,30 +240,8 @@ func Import(home string, data []byte, passphrase string, o ImportOptions) (*Impo
 		res.Agents = append(res.Agents, strings.TrimPrefix(dir, "agents/"))
 	}
 	sort.Strings(res.Agents)
-	if err := os.MkdirAll(home, 0o700); err != nil {
+	if err := restoreBackupFiles(home, b.Files, res, o); err != nil {
 		return nil, err
-	}
-	for _, rel := range res.Files {
-		p := filepath.Join(home, filepath.FromSlash(rel))
-		if dir := agentOf(rel); dir != "" {
-			d := filepath.Join(home, filepath.FromSlash(dir))
-			if err := os.MkdirAll(d, 0o700); err != nil {
-				return nil, err
-			}
-			unlock, err := lockAgentDir(d)
-			if err != nil {
-				return nil, err
-			}
-			err = writeFileAtomic(p, b.Files[rel], 0o600)
-			unlock()
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if err := writeFileAtomic(p, b.Files[rel], 0o600); err != nil {
-			return nil, err
-		}
 	}
 	return res, nil
 }

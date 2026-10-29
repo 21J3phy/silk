@@ -12,6 +12,12 @@ func lockFile(path string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	return lockOpenedFile(f)
+}
+
+// lockOpenedFile owns f and closes it when unlocking or on error.
+func lockOpenedFile(f *os.File) (func(), error) {
+	var err error
 	for {
 		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
 		if err != syscall.EINTR {

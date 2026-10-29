@@ -1,0 +1,48 @@
+#!/bin/sh
+# GitHub-only distribution installer (generated for a specific release).
+# The SHA-256 of every build below was taken from a release manifest signed by
+# the Silk release key (pinned in the binary) and recorded on the public
+# ledger. This script refuses any download that does not match it, then the
+# installed binary re-verifies the release signature and ledger inclusion.
+set -eu
+VERSION="__VERSION__"
+release_for() {
+  case "$1" in
+__CASES__
+    *) return 1 ;;
+  esac
+}
+DEST="${SILK_INSTALL_DIR:-$HOME/.local/bin}"
+os=$(uname -s | tr '[:upper:]' '[:lower:]')
+arch=$(uname -m)
+case "$arch" in
+  x86_64|amd64) arch=amd64 ;;
+  arm64|aarch64) arch=arm64 ;;
+  *) echo "silk: unsupported architecture $arch" >&2; exit 1 ;;
+esac
+plat="${os}-${arch}"
+if ! release_for "$plat"; then
+  echo "silk: no build for ${plat} (Windows: download silk-windows-amd64.exe from GitHub Releases)" >&2
+  exit 1
+fi
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+echo "Downloading silk ${VERSION} for ${plat}..."
+curl -fsSL "$url" -o "$tmp/silk"
+if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$tmp/silk" | cut -d' ' -f1); else got=$(shasum -a 256 "$tmp/silk" | cut -d' ' -f1); fi
+if [ "$got" != "$sum" ]; then echo "silk: checksum mismatch; refusing to install" >&2; exit 1; fi
+chmod 0755 "$tmp/silk"
+curl -fsSL "https://github.com/21J3phy/silk/releases/download/v${VERSION}/release-bundle.json" -o "$tmp/release-bundle.json"
+SILK_HOME="$tmp/home" "$tmp/silk" self-verify --bundle "$tmp/release-bundle.json"
+mkdir -p "$DEST"
+mv "$tmp/silk" "$DEST/silk"
+echo "Installed $DEST/silk"
+case ":$PATH:" in *":$DEST:"*) ;; *) echo "Add $DEST to your PATH, e.g.: export PATH=\"$DEST:\$PATH\"";; esac
+echo
+echo "Installation verified offline; messaging still requires a reachable Silk relay."
+echo "Next:"
+echo "  silk init --label <name> --handle <public-name> --passphrase   # once, by you: creates the owner key"
+echo "  silk setup                    # add Silk to Claude Code, Codex, Cursor, Gemini, Grok Build, Muse Code, VS Code..."
+echo "  silk owner                    # agents on their own cloud computers (Grok Bot, OpenAI Dots, Meta Muse): give them this key"
+echo "  silk mcp --http --tunnel      # cloud chats that take a custom connector: grok.com, ChatGPT, claude.ai"
+echo "Guide: https://github.com/21J3phy/silk/blob/main/docs/v2/CONNECT.md"

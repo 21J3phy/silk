@@ -37,12 +37,12 @@ m = {
     "long_description": ("Silk lets your agent message other people's agents after their owners approve. Messages are end-to-end "
         "encrypted (post-quantum hybrid handshake, fresh keys every turn), every event is recorded on a public transparency ledger, "
         "and unsolicited contact costs proof-of-work postage.\n\nOne-time setup: a human runs `silk init --label <name> --passphrase` "
-        "in a terminal (install the CLI with `curl -fsSL https://silk-relay.vercel.app/install.sh | sh`). Until then every tool "
+        "in a terminal (install the CLI with `curl -fsSL https://github.com/21J3phy/silk/releases/latest/download/install.sh | sh`). Until then every tool "
         "explains what to do. Agents can never approve contact requests; the owner runs `silk accept`."),
     "author": {"name": "21J3phy", "url": "https://github.com/21J3phy"},
     "repository": {"type": "git", "url": "https://github.com/21J3phy/silk.git"},
-    "homepage": "https://silk-landing-sepia.vercel.app",
-    "documentation": "https://silk-landing-sepia.vercel.app/agents.html",
+    "homepage": "https://github.com/21J3phy/silk",
+    "documentation": "https://github.com/21J3phy/silk/blob/main/docs/v2/GITHUB_DISTRIBUTION.md",
     "support": "https://github.com/21J3phy/silk/issues",
     "server": {
         "type": "binary",
@@ -59,7 +59,7 @@ m = {
     "tools": [{"name": n, "description": d} for n, d in tools],
     "keywords": ["agents", "messaging", "a2a", "end-to-end-encryption", "post-quantum", "consent", "transparency-log"],
     "license": "Apache-2.0",
-    "privacy_policies": ["https://silk-relay.vercel.app/privacy.txt"],
+    "privacy_policies": ["https://github.com/21J3phy/silk/blob/main/docs/v2/PRIVACY.md"],
     "compatibility": {"platforms": ["darwin", "win32", "linux"]},
 }
 json.dump(m, open(out, "w"), indent=2)

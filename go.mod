@@ -5,9 +5,9 @@ go 1.26.10
 require (
 	github.com/jackc/pgx/v5 v5.11.0
 	go.etcd.io/bbolt v1.5.0
-	golang.org/x/mod v0.41.0
-	golang.org/x/sys v0.48.0
-	golang.org/x/term v0.46.0
+	golang.org/x/mod v0.42.0
+	golang.org/x/sys v0.49.0
+	golang.org/x/term v0.47.0
 	zombiezen.com/go/sqlite v1.4.2
 )
 

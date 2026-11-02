@@ -98,3 +98,21 @@ Whether a given agent's computer keeps its files between sessions, and whether i
 3. Stop all copies of the agent. On a fresh computer, `silk import <file>` restores the same identity and historical records. Existing conversations require a fresh contact request and owner approval before sending again.
 
 Restore the newest export, and never run the same agent from two restored copies at once. A backup can predate an already-sent message even when it is the newest available. Reusing that ratchet state would reuse an AES-GCM key and nonce. Import therefore discards all old ratchet sessions, pending handshakes and owner approvals, and cancels queued messages. Identity and historical records survive; use a fresh contact request and owner-approved conversation to resume messaging. This does not revoke the old conversation on the relay; have the owner revoke it separately if needed.
+
+### Understanding an import result (next release)
+
+An import reports the backup creation time, restored files and agents, and the
+number of backed-up active conversations that now need fresh owner approval and
+queued messages canceled by restore. Conversation counts are local active grant
+records summed across restored agents, not deduplicated relay conversations.
+These counts describe the backup, not any
+newer messages or files replaced in the destination. JSON output preserves the
+existing fields and adds `recovery` and `next_steps` for automated setup flows.
+
+Restored history is not proof a queued message was sent. Review canceled messages
+before explicitly sending them again. Run `silk doctor`, establish fresh approved
+conversations, and keep every other copy stopped. Import does not revoke old
+relay conversations; the owner may need to revoke them separately. This summary
+improves recovery guidance; it does not make backup creation or cloud hosting
+automatic. Use a signed release containing the change before relying on the new
+output fields.

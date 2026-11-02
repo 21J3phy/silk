@@ -13,19 +13,21 @@ import (
 // send that reached the network: resuming its deterministic chain would reuse
 // an AES-GCM key/nonce. Fresh owner-approved handshakes are required after every
 // restore. Replaying pending handshakes can recreate the old root too.
-func invalidateRestoredSessions(b *backupBundle) error {
+func invalidateRestoredSessions(b *backupBundle) (RestoreImpact, error) {
+	var impact RestoreImpact
 	for name, data := range b.Files {
 		if agentOf(name) == "" || path.Base(name) != "state.json" {
 			continue
 		}
 		var st agentState
 		if err := json.Unmarshal(data, &st); err != nil {
-			return fmt.Errorf("invalid backed-up agent state %s: %w", name, err)
+			return RestoreImpact{}, fmt.Errorf("invalid backed-up agent state %s: %w", name, err)
 		}
 		st.Sessions = map[string]*seal.Session{}
 		for _, g := range st.Grants {
 			if g != nil && g.Status == "active" {
 				g.Status = "restored: fresh owner-approved conversation required"
+				impact.ConversationsRequiringApproval++
 			}
 		}
 		st.OutIntros = map[string]*OutIntro{}
@@ -34,14 +36,15 @@ func invalidateRestoredSessions(b *backupBundle) error {
 		for _, s := range st.Sent {
 			if s != nil && s.Status == "queued" {
 				s.Status = "canceled by restore"
+				impact.CanceledQueuedMessages++
 				s.Frame = nil
 			}
 		}
 		out, err := json.Marshal(&st)
 		if err != nil {
-			return err
+			return RestoreImpact{}, err
 		}
 		b.Files[name] = out
 	}
-	return nil
+	return impact, nil
 }

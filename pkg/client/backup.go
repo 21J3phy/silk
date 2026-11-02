@@ -186,11 +186,21 @@ type ImportOptions struct {
 	Overwrite bool
 }
 
+// RestoreImpact counts changes to the backed-up state, not overwritten destination
+// files or messages sent since the backup. Conversations are local active grant
+// records summed across agents, not deduplicated or verified relay state. It does not imply
+// that any old conversation has been revoked on the relay.
+type RestoreImpact struct {
+	ConversationsRequiringApproval int `json:"conversations_requiring_approval"`
+	CanceledQueuedMessages         int `json:"canceled_queued_messages"`
+}
+
 // ImportResult describes a restored backup.
 type ImportResult struct {
-	Files     []string `json:"files"`
-	Agents    []string `json:"agents"`
-	CreatedMs int64    `json:"created_ms"`
+	Files     []string      `json:"files"`
+	Agents    []string      `json:"agents"`
+	CreatedMs int64         `json:"created_ms"`
+	Recovery  RestoreImpact `json:"recovery"`
 }
 
 // Import restores an encrypted backup made by Export into home. The backup
@@ -221,10 +231,11 @@ func Import(home string, data []byte, passphrase string, o ImportOptions) (*Impo
 	if err := json.Unmarshal(plain, &b); err != nil {
 		return nil, errors.New("backup file is corrupt")
 	}
-	if err := invalidateRestoredSessions(&b); err != nil {
+	impact, err := invalidateRestoredSessions(&b)
+	if err != nil {
 		return nil, err
 	}
-	res := &ImportResult{CreatedMs: f.CreatedMs}
+	res := &ImportResult{CreatedMs: f.CreatedMs, Recovery: impact}
 	agents := map[string]bool{}
 	for rel := range b.Files {
 		if !filepath.IsLocal(filepath.FromSlash(rel)) || path.Clean(rel) != rel || strings.Contains(rel, `\`) || skipInBackup(path.Base(rel)) {

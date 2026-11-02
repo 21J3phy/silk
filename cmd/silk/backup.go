@@ -144,13 +144,34 @@ func runImport(g *globals, args []string) error {
 	if err != nil {
 		return err
 	}
-	out(g, res, func(w io.Writer) {
-		fmt.Fprintf(w, "Restored %d files into %s from a backup made %s.\n", len(res.Files), g.home,
-			time.UnixMilli(res.CreatedMs).Format(time.RFC3339))
-		if len(res.Agents) > 0 {
-			fmt.Fprintf(w, "  agents: %s\n", strings.Join(res.Agents, ", "))
-		}
-		fmt.Fprintln(w, "Run `silk doctor` to check it against the relay.")
+	out(g, struct {
+		*client.ImportResult
+		NextSteps []string `json:"next_steps"`
+	}{res, restoreNextSteps}, func(w io.Writer) {
+		printImportResult(w, g.home, res)
 	})
 	return nil
+}
+
+// Restore advice is part of both human and JSON output so automated consumers
+// cannot mistake a restored identity for uninterrupted messaging.
+var restoreNextSteps = []string{
+	"Run silk doctor to check the restored identity against the relay.",
+	"Use fresh contact requests and owner approval to resume old conversations; restored ratchet sessions and pending approvals were discarded.",
+	"Queued messages canceled by restore were not resent. Review them before explicitly sending again.",
+	"Import does not revoke old conversations on the relay. Ask the owner to revoke them separately if needed.",
+	"Keep every other copy of this agent stopped; never run restored copies simultaneously.",
+}
+
+func printImportResult(w io.Writer, home string, res *client.ImportResult) {
+	fmt.Fprintf(w, "Restored %d files into %s from a backup made %s.\n", len(res.Files), home,
+		time.UnixMilli(res.CreatedMs).Format(time.RFC3339))
+	if len(res.Agents) > 0 {
+		fmt.Fprintf(w, "  agents: %s\n", strings.Join(res.Agents, ", "))
+	}
+	fmt.Fprintf(w, "Recovery impact in this backup: %d conversations require fresh owner approval; %d queued messages canceled.\n",
+		res.Recovery.ConversationsRequiringApproval, res.Recovery.CanceledQueuedMessages)
+	for _, step := range restoreNextSteps {
+		fmt.Fprintln(w, step)
+	}
 }

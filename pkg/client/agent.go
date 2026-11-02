@@ -764,10 +764,18 @@ type SyncResult struct {
 	Cursor   uint64       `json:"cursor"`
 }
 
-// Sync fetches new events (long-polling up to wait), decrypts, and persists them.
-// Processing is idempotent: events at or below the stored cursor are skipped.
+// Sync retries queued outgoing frames, then receives and persists new events.
+// Use Receive for inbox monitoring that must not transmit queued messages or introductions.
 func (a *Agent) Sync(ctx context.Context, wait time.Duration) (*SyncResult, error) {
 	a.Flush(ctx)
+	return a.Receive(ctx, wait)
+}
+
+// Receive fetches new events (long-polling up to wait), decrypts, and persists them
+// without flushing the outbox or sending acknowledgments. It still updates local
+// inbox, ratchet, and cursor state; it is not a read-only filesystem operation.
+// Processing is idempotent: events at or below the stored cursor are skipped.
+func (a *Agent) Receive(ctx context.Context, wait time.Duration) (*SyncResult, error) {
 	st0, err := a.readState()
 	if err != nil {
 		return nil, err

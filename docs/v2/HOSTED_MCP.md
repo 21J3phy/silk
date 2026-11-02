@@ -83,3 +83,18 @@ ledger, see `POSTGRES_RELAY.md`.
    identity twice. Document operator access and how to revoke the connector.
 
 No deployment, credential migration or real-agent test is implied by this guide.
+
+## Receive-only monitors (next release)
+
+The SDK's `Agent.Receive(ctx, wait)` and CLI
+`silk inbox --receive-only --follow --json` receive and decrypt events without
+retrying queued outgoing messages or contact requests. Use this mode for a
+notification-only monitor. The existing `Sync`, ordinary `inbox`, and MCP inbox
+behavior still flush the outbox; this option is not a new restricted MCP grant.
+It is source functionality until included in a verified signed release.
+
+Receive-only still persists incoming messages, ratchet state, and the inbox
+cursor. It does not acknowledge messages or establish a durable notification
+service. Operators still need exclusive identity ownership, supported persistent
+storage, restart supervision, explicit notification delivery acknowledgments and
+deduplication. Never substitute a raw state snapshot for supported backup/import.

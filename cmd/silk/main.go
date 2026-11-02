@@ -83,7 +83,7 @@ Consent
 
 Messaging
   silk send <@handle|id|conversation> <text...> [--json] [--reply ID]
-  silk inbox [--wait SECONDS] [--all] [--follow] sync and show messages (--follow streams them)
+  silk inbox [--wait SECONDS] [--all] [--follow] [--receive-only] show messages; --receive-only leaves outgoing frames queued
   silk ack <message-id> [received|handled|declined]
   silk status <message-id>                      delivery state of a sent message
 
@@ -583,6 +583,7 @@ func run(ctx context.Context, cmd string, args []string) error {
 		wait := fs.Int("wait", 0, "long-poll up to N seconds for new events")
 		all := fs.Bool("all", false, "include acknowledged messages")
 		follow := fs.Bool("follow", false, "keep running and print events as they arrive (Ctrl-C to stop)")
+		receiveOnly := fs.Bool("receive-only", false, "receive without transmitting queued messages or contact requests")
 		if _, err := parse(fs, args); err != nil {
 			return err
 		}
@@ -591,12 +592,12 @@ func run(ctx context.Context, cmd string, args []string) error {
 			return err
 		}
 		if *follow {
-			return followInbox(ctx, g, a)
+			return followInbox(ctx, g, a, *receiveOnly)
 		}
 		if err != nil {
 			return err
 		}
-		res, err := a.Sync(ctx, time.Duration(*wait)*time.Second)
+		res, err := receiveInbox(ctx, a, time.Duration(*wait)*time.Second, *receiveOnly)
 		if err != nil {
 			return err
 		}
@@ -990,12 +991,26 @@ func publishRelease(ctx context.Context, args []string) error {
 	return nil
 }
 
+// inboxClient separates receiving from retrying queued outgoing frames.
+type inboxClient interface {
+	Sync(context.Context, time.Duration) (*client.SyncResult, error)
+	Receive(context.Context, time.Duration) (*client.SyncResult, error)
+}
+
+// receiveInbox keeps one-shot and streaming inbox modes on the same policy.
+func receiveInbox(ctx context.Context, a inboxClient, wait time.Duration, receiveOnly bool) (*client.SyncResult, error) {
+	if receiveOnly {
+		return a.Receive(ctx, wait)
+	}
+	return a.Sync(ctx, wait)
+}
+
 // followInbox long-polls forever, printing events as they arrive.
-func followInbox(ctx context.Context, g *globals, a *client.Agent) error {
+func followInbox(ctx context.Context, g *globals, a *client.Agent, receiveOnly bool) error {
 	fmt.Fprintf(os.Stderr, "Listening as %s (Ctrl-C to stop)…\n", a.Address())
 	backoff := time.Second
 	for ctx.Err() == nil {
-		res, err := a.Sync(ctx, 25*time.Second)
+		res, err := receiveInbox(ctx, a, 25*time.Second, receiveOnly)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
